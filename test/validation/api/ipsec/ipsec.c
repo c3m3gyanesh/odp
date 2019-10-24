@@ -1,10 +1,9 @@
 /* Copyright (c) 2017-2018, Linaro Limited
+ * Copyright (c) 2019, Nokia
  * All rights reserved.
  *
  * SPDX-License-Identifier:	 BSD-3-Clause
  */
-
-#include "config.h"
 
 #include <odp_api.h>
 #include <odp_cunit_common.h>
@@ -147,6 +146,13 @@ int ipsec_check(odp_bool_t ah,
 	     ODP_SUPPORT_NO == capa.op_mode_inline_in) ||
 	    (ODP_IPSEC_OP_MODE_INLINE == suite_context.outbound_op_mode &&
 	     ODP_SUPPORT_NO == capa.op_mode_inline_out))
+		return ODP_TEST_INACTIVE;
+
+	/* suite_context.pktio is set to ODP_PKTIO_INVALID in ipsec_suite_init()
+	 * if the pktio device doesn't support inline IPsec processing. */
+	if (suite_context.pktio == ODP_PKTIO_INVALID &&
+	    (ODP_IPSEC_OP_MODE_INLINE == suite_context.inbound_op_mode ||
+	     ODP_IPSEC_OP_MODE_INLINE == suite_context.outbound_op_mode))
 		return ODP_TEST_INACTIVE;
 
 	if (ah && (ODP_SUPPORT_NO == capa.proto_ah))
@@ -390,6 +396,7 @@ void ipsec_sa_destroy(odp_ipsec_sa_t sa)
 {
 	odp_event_t event;
 	odp_ipsec_status_t status;
+	int ret;
 
 	CU_ASSERT_EQUAL(IPSEC_SA_CTX, odp_ipsec_sa_context(sa));
 
@@ -402,12 +409,15 @@ void ipsec_sa_destroy(odp_ipsec_sa_t sa)
 
 		CU_ASSERT_EQUAL(ODP_EVENT_IPSEC_STATUS, odp_event_type(event));
 
-		CU_ASSERT_EQUAL(ODP_IPSEC_OK, odp_ipsec_status(&status, event));
+		ret = odp_ipsec_status(&status, event);
+		CU_ASSERT(ret == 0);
 
-		CU_ASSERT_EQUAL(ODP_IPSEC_STATUS_SA_DISABLE, status.id);
-		CU_ASSERT_EQUAL(sa, status.sa);
-		CU_ASSERT_EQUAL(0, status.result);
-		CU_ASSERT_EQUAL(0, status.warn.all);
+		if (ret == 0) {
+			CU_ASSERT_EQUAL(ODP_IPSEC_STATUS_SA_DISABLE, status.id);
+			CU_ASSERT_EQUAL(sa, status.sa);
+			CU_ASSERT_EQUAL(0, status.result);
+			CU_ASSERT_EQUAL(0, status.warn.all);
+		}
 
 		odp_event_free(event);
 	}
@@ -562,11 +572,13 @@ static int ipsec_send_in_one(const ipsec_test_part *part,
 				  ODP_EVENT_PACKET_IPSEC);
 		}
 	} else {
-		odp_queue_t queue;
 		odp_pktout_queue_t pktout;
+		odp_queue_t queue = ODP_QUEUE_INVALID;
 
-		CU_ASSERT_EQUAL_FATAL(1, odp_pktout_queue(suite_context.pktio,
-							  &pktout, 1));
+		if (odp_pktout_queue(suite_context.pktio, &pktout, 1) != 1) {
+			CU_FAIL_FATAL("No pktout queue");
+			return 0;
+		}
 
 		CU_ASSERT_EQUAL(1, odp_pktout_send(pktout, &pkt, 1));
 		CU_ASSERT_EQUAL_FATAL(1,
@@ -654,9 +666,9 @@ static int ipsec_send_out_one(const ipsec_test_part *part,
 		}
 	} else {
 		struct odp_ipsec_out_inline_param_t inline_param;
-		odp_queue_t queue;
 		uint32_t hdr_len;
 		uint8_t hdr[32];
+		odp_queue_t queue = ODP_QUEUE_INVALID;
 
 		if (NULL != part->out[0].pkt_out) {
 			hdr_len = part->out[0].pkt_out->l3_offset;
@@ -871,36 +883,25 @@ int ipsec_suite_init(void)
 	return rc < 0 ? -1 : 0;
 }
 
-static int ipsec_suite_term(odp_testinfo_t *suite)
+static int ipsec_suite_term(void)
 {
-	int i;
-	int first = 1;
-
 	if (suite_context.pktio != ODP_PKTIO_INVALID)
 		pktio_stop(suite_context.pktio);
 
-	for (i = 0; suite[i].name; i++) {
-		if (suite[i].check_active &&
-		    suite[i].check_active() == ODP_TEST_INACTIVE) {
-			if (first) {
-				first = 0;
-				printf("\n\n  Inactive tests:\n");
-			}
-			printf("    %s\n", suite[i].name);
-		}
-	}
+	if (odp_cunit_print_inactive())
+		return -1;
 
 	return 0;
 }
 
 int ipsec_in_term(void)
 {
-	return ipsec_suite_term(ipsec_in_suite);
+	return ipsec_suite_term();
 }
 
 int ipsec_out_term(void)
 {
-	return ipsec_suite_term(ipsec_out_suite);
+	return ipsec_suite_term();
 }
 
 int ipsec_init(odp_instance_t *inst)

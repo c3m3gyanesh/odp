@@ -4,7 +4,6 @@
  * SPDX-License-Identifier:     BSD-3-Clause
  */
 
-
 /**
  * @file
  *
@@ -117,10 +116,16 @@ int odp_queue_context_set(odp_queue_t queue, void *context, uint32_t len);
 /**
  * Get queue context
  *
+ * Returns previously stored queue context pointer. The context pointer may
+ * be set with odp_queue_context_set() or during queue creation
+ * (see odp_queue_param_t). The pointer value is set to NULL by default.
+ *
  * @param queue    Queue handle
  *
  * @return pointer to the queue context
  * @retval NULL on failure
+ *
+ * @see odp_queue_context_set(), odp_queue_create()
  */
 void *odp_queue_context(odp_queue_t queue);
 

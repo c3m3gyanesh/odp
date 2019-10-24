@@ -4,8 +4,6 @@
  * SPDX-License-Identifier:     BSD-3-Clause
  */
 
-#include "config.h"
-
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -13,9 +11,7 @@
 #include <errno.h>
 
 #include <odp_api.h>
-#include <odph_debug.h>
 #include <odp/helper/odph_api.h>
-#include <odp/helper/ip.h>
 
 static void print_prefix_info(
 		const char *msg, uint32_t ip, uint8_t cidr)
@@ -140,7 +136,7 @@ static int test_ip_lookup_table(void)
 	return 0;
 }
 
-int main(int argc ODPH_UNUSED, char *argv[] ODPH_UNUSED)
+int main(int argc ODP_UNUSED, char *argv[] ODP_UNUSED)
 {
 	odp_instance_t instance;
 	int ret = 0;

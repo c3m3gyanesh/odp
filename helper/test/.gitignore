@@ -9,3 +9,5 @@ process
 table
 thread
 pthread
+version
+debug

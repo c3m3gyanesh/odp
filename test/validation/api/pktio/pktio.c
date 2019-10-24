@@ -4,8 +4,6 @@
  * SPDX-License-Identifier:     BSD-3-Clause
  */
 
-#include "config.h"
-
 #include <odp_api.h>
 #include <odp_cunit_common.h>
 
@@ -219,8 +217,9 @@ static uint32_t pktio_pkt_seq_hdr(odp_packet_t pkt, size_t l4_hdr_len)
 	}
 
 	if (head.magic != TEST_SEQ_MAGIC) {
-		fprintf(stderr, "error: header magic invalid %" PRIu32 "\n",
+		fprintf(stderr, "error: header magic invalid 0x%" PRIx32 "\n",
 			head.magic);
+		odp_packet_print(pkt);
 		return TEST_SEQ_INVALID;
 	}
 
@@ -237,7 +236,7 @@ static uint32_t pktio_pkt_seq_hdr(odp_packet_t pkt, size_t l4_hdr_len)
 			CU_ASSERT(seq != TEST_SEQ_INVALID);
 		} else {
 			fprintf(stderr,
-				"error: tail magic invalid %" PRIu32 "\n",
+				"error: tail magic invalid 0x%" PRIx32 "\n",
 				tail.magic);
 		}
 	} else {
@@ -549,12 +548,18 @@ static int get_packets(pktio_info_t *pktio_rx, odp_packet_t pkt_tbl[],
 	odp_event_t evt_tbl[num];
 	int num_evts = 0;
 	int num_pkts = 0;
-	int i;
+	int i, ret;
 
 	if (pktio_rx->in_mode == ODP_PKTIN_MODE_DIRECT) {
 		odp_pktin_queue_t pktin;
 
-		CU_ASSERT_FATAL(odp_pktin_queue(pktio_rx->id, &pktin, 1) == 1);
+		ret = odp_pktin_queue(pktio_rx->id, &pktin, 1);
+
+		if (ret != 1) {
+			CU_FAIL_FATAL("No pktin queues");
+			return -1;
+		}
+
 		return odp_pktin_recv(pktin, pkt_tbl, num);
 	}
 
@@ -592,19 +597,23 @@ static int wait_for_packets_hdr(pktio_info_t *pktio_rx, odp_packet_t pkt_tbl[],
 				uint32_t seq_tbl[], int num, txrx_mode_e mode,
 				uint64_t ns, size_t l4_hdr_len)
 {
-	odp_time_t wait_time, end;
+	odp_time_t wait_time, end, start;
 	int num_rx = 0;
 	int i;
 	odp_packet_t pkt_tmp[num];
 
 	wait_time = odp_time_local_from_ns(ns);
-	end = odp_time_sum(odp_time_local(), wait_time);
+	start     = odp_time_local();
+	end       = odp_time_sum(start, wait_time);
 
-	do {
+	while (num_rx < num && odp_time_cmp(end, odp_time_local()) > 0) {
 		int n = get_packets(pktio_rx, pkt_tmp, num - num_rx, mode);
 
 		if (n < 0)
 			break;
+
+		if (n == 0)
+			continue;
 
 		for (i = 0; i < n; ++i) {
 			if (pktio_pkt_seq_hdr(pkt_tmp[i], l4_hdr_len) ==
@@ -613,7 +622,7 @@ static int wait_for_packets_hdr(pktio_info_t *pktio_rx, odp_packet_t pkt_tbl[],
 			else
 				odp_packet_free(pkt_tmp[i]);
 		}
-	} while (num_rx < num && odp_time_cmp(end, odp_time_local()) > 0);
+	}
 
 	return num_rx;
 }
@@ -795,6 +804,10 @@ static void pktio_txrx_multi(pktio_info_t *pktio_a, pktio_info_t *pktio_b,
 	num_rx = wait_for_packets(pktio_b, rx_pkt, tx_seq,
 				  num_pkts, mode, ODP_TIME_SEC_IN_NS);
 	CU_ASSERT(num_rx == num_pkts);
+	if (num_rx != num_pkts) {
+		fprintf(stderr, "error: received %i, out of %i packets\n",
+			num_rx, num_pkts);
+	}
 
 	for (i = 0; i < num_rx; ++i) {
 		odp_packet_data_range_t range;
@@ -828,7 +841,7 @@ static void test_txrx(odp_pktin_mode_t in_mode, int num_pkts,
 	/* create pktios and associate input/output queues */
 	for (i = 0; i < num_ifaces; ++i) {
 		odp_pktout_queue_t pktout;
-		odp_queue_t queue;
+		odp_queue_t queue = ODP_QUEUE_INVALID;
 		odp_pktout_mode_t out_mode = ODP_PKTOUT_MODE_DIRECT;
 
 		if (mode == TXRX_MODE_MULTI_EVENT)
@@ -850,7 +863,6 @@ static void test_txrx(odp_pktin_mode_t in_mode, int num_pkts,
 			CU_ASSERT_FATAL(odp_pktout_queue(io->id,
 							 &pktout, 1) == 1);
 			io->pktout = pktout;
-			queue = ODP_QUEUE_INVALID;
 		}
 
 		io->queue_out = queue;
@@ -2817,6 +2829,9 @@ static int pktio_suite_term(void)
 		ret = -1;
 	}
 	default_pkt_pool = ODP_POOL_INVALID;
+
+	if (odp_cunit_print_inactive())
+		ret = -1;
 
 	return ret;
 }

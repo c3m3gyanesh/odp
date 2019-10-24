@@ -1,10 +1,9 @@
-/* Copyright (c) 2016-2018, Linaro Limited
+/* Copyright (c) 2019, Nokia
+ * Copyright (c) 2016-2018, Linaro Limited
  * All rights reserved.
  *
  * SPDX-License-Identifier:     BSD-3-Clause
  */
-
-#include "config.h"
 
 /* This file handles the internal shared memory: internal shared memory
  * is memory which is sharable by all ODP threads regardless of how the
@@ -256,6 +255,7 @@ static void procsync(void);
 static int hp_create_file(uint64_t len, const char *filename)
 {
 	int fd;
+	int ret;
 	void *addr;
 
 	if (len <= 0) {
@@ -273,10 +273,19 @@ static int hp_create_file(uint64_t len, const char *filename)
 	/* remove file from file system */
 	unlink(filename);
 
-	if (ftruncate(fd, len) == -1) {
-		ODP_ERR("Could not truncate file: %s\n", strerror(errno));
-		close(fd);
-		return -1;
+	ret = fallocate(fd, 0, 0, len);
+	if (ret == -1) {
+		if (errno == ENOTSUP) {
+			ODP_DBG("fallocate() not supported\n");
+			ret = ftruncate(fd, len);
+		}
+
+		if (ret == -1) {
+			ODP_ERR("memory allocation failed: fd=%d, err=%s.\n",
+				fd, strerror(errno));
+			close(fd);
+			return -1;
+		}
 	}
 
 	/* commit huge page */
@@ -637,6 +646,7 @@ static int create_file(int block_index, huge_flag_t huge, uint64_t len,
 					      *		    /mnt/huge */
 	int  oflag = O_RDWR | O_CREAT | O_TRUNC; /* flags for open	      */
 	char dir[ISHM_FILENAME_MAXLEN];
+	int ret;
 
 	/* No ishm_block_t for the master single VA memory file */
 	if (single_va) {
@@ -676,12 +686,20 @@ static int create_file(int block_index, huge_flag_t huge, uint64_t len,
 		return -1;
 	}
 
-	if (ftruncate(fd, len) == -1) {
-		ODP_ERR("ftruncate failed: fd=%d, err=%s.\n",
-			fd, strerror(errno));
-		close(fd);
-		unlink(filename);
-		return -1;
+	ret = fallocate(fd, 0, 0, len);
+	if (ret == -1) {
+		if (errno == ENOTSUP) {
+			ODP_DBG("fallocate() not supported\n");
+			ret = ftruncate(fd, len);
+		}
+
+		if (ret == -1) {
+			ODP_ERR("memory allocation failed: fd=%d, err=%s.\n",
+				fd, strerror(errno));
+			close(fd);
+			unlink(filename);
+			return -1;
+		}
 	}
 
 	/* No export file is created since this is only for internal use.*/
@@ -1095,7 +1113,7 @@ int _odp_ishm_reserve(const char *name, uint64_t size, int fd,
 	}
 
 	/* Otherwise, Try first huge pages when possible and needed: */
-	if ((fd < 0) && page_hp_size && ((flags &  _ODP_ISHM_USE_HP) ||
+	if ((fd < 0) && page_hp_size && ((user_flags &  ODP_SHM_HP) ||
 					 size > ishm_tbl->huge_page_limit)) {
 		/* at least, alignment in VA should match page size, but user
 		 * can request more: If the user requirement exceeds the page
@@ -1149,6 +1167,11 @@ int _odp_ishm_reserve(const char *name, uint64_t size, int fd,
 
 	/* Try normal pages if huge pages failed */
 	if (fd < 0) {
+		if (user_flags & ODP_SHM_HP) {
+			odp_spinlock_unlock(&ishm_tbl->lock);
+			ODP_ERR("Unable to allocate memory from huge pages\n");
+			return -1;
+		}
 		/* at least, alignment in VA should match page size, but user
 		 * can request more: If the user requirement exceeds the page
 		 * size then we have to make sure the block will be mapped at
@@ -1969,6 +1992,10 @@ int _odp_ishm_status(const char *title)
 
 	/* display block table: 1 line per entry +1 extra line if mapped here */
 	for (i = 0; i < ISHM_MAX_NB_BLOCKS; i++) {
+		void *start_addr = NULL;
+		void *end_addr = NULL;
+		int entry_fd = -1;
+
 		if (ishm_tbl->block[i].len <= 0)
 			continue; /* unused block */
 
@@ -2001,25 +2028,25 @@ int _odp_ishm_status(const char *title)
 		lost_total += ishm_tbl->block[i].len -
 			      ishm_tbl->block[i].user_len;
 		len_total += ishm_tbl->block[i].len;
-		ODP_PRINT("%2i  %-*s %s%c  0x%-08lx-0x%08lx %-08ld   %-08ld %-3lu %-3lu",
+
+		if (proc_index >= 0) {
+			start_addr = ishm_proctable->entry[proc_index].start;
+			end_addr = (void *)(uintptr_t)((uintptr_t)start_addr +
+					ishm_tbl->block[i].len);
+			entry_fd = ishm_proctable->entry[proc_index].fd;
+		}
+
+		ODP_PRINT("%2i  %-*s %s%c  0x%-08lx-0x%08lx %-08ld   %-08ld %-3lu %-3lu %-3d %s\n",
 			  i, max_name_len, ishm_tbl->block[i].name,
-			  flags, huge,
-			  ishm_proctable->entry[proc_index].start,
-			  (uintptr_t)ishm_proctable->entry[proc_index].start +
-				ishm_tbl->block[i].len,
+			  flags, huge, start_addr, end_addr,
 			  ishm_tbl->block[i].user_len,
 			  ishm_tbl->block[i].len - ishm_tbl->block[i].user_len,
 			  ishm_tbl->block[i].seq,
-			  ishm_tbl->block[i].refcnt);
-
-		if (proc_index < 0)
-			continue;
-
-		ODP_PRINT(" %-3d",
-			  ishm_proctable->entry[proc_index].fd);
-
-		ODP_PRINT("%s\n", ishm_tbl->block[i].filename[0] ?
-			  ishm_tbl->block[i].filename : "(none)");
+			  ishm_tbl->block[i].refcnt,
+			  entry_fd,
+			  ishm_tbl->block[i].filename[0] ?
+					  ishm_tbl->block[i].filename :
+					  "(none)");
 	}
 	ODP_PRINT("TOTAL: %58s%-08ld %2s%-08ld\n",
 		  "", len_total,

@@ -1,6 +1,8 @@
 include $(top_srcdir)/test/Makefile.inc
 
-EXECUTABLES = chksum \
+EXECUTABLES = version \
+	      debug \
+	      chksum \
               cuckootable \
               parse\
               table \
@@ -36,3 +38,5 @@ odpthreads_SOURCES = odpthreads.c
 parse_SOURCES = parse.c
 table_SOURCES = table.c
 iplookuptable_SOURCES = iplookuptable.c
+version_SOURCES = version.c
+debug_SOURCES = debug.c

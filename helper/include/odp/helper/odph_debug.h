@@ -1,16 +1,21 @@
 /* Copyright (c) 2015-2018, Linaro Limited
+ * Copyright (c) 2019, Nokia
+ *
  * All rights reserved.
  *
  * SPDX-License-Identifier:     BSD-3-Clause
  */
+
 /**
  * @file
  *
- * HELPER debug
+ * Helper debug
  */
 
-#ifndef HELPER_DEBUG_H_
-#define HELPER_DEBUG_H_
+#ifndef ODPH_DEBUG_H_
+#define ODPH_DEBUG_H_
+
+#include <odp/autoheader_external.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,14 +24,33 @@
 extern "C" {
 #endif
 
+/** @addtogroup odph_debug ODPH DEBUG
+ *  @{
+ */
+
+/**
+ * Assert macro for applications and helper code
+ *
+ * No code is generated when ODPH_DEBUG=0. Prints error message and aborts when
+ * ODPH_DEBUG=1 and 'cond' is false.
+ */
+#define ODPH_ASSERT(cond) \
+	do { \
+		if ((ODPH_DEBUG == 1) && (!(cond))) { \
+			fprintf(stderr, "%s:%d:%s(): %s\n", __FILE__, __LINE__,\
+				__func__, #cond); \
+			abort(); \
+		} \
+	} while (0)
+
 /**
  * log level.
  */
-typedef enum HELPER_log_level {
+typedef enum odph_log_level {
 	ODPH_LOG_DBG,
 	ODPH_LOG_ERR,
 	ODPH_LOG_ABORT
-} HELPER_log_level_e;
+} odph_log_level_e;
 
 /**
  * default LOG macro.
@@ -76,11 +100,6 @@ do { \
 /**
  * @}
  */
-
-/**
- * Mark intentionally unused argument for functions
- */
-#define ODPH_UNUSED     __attribute__((__unused__))
 
 #ifdef __cplusplus
 }

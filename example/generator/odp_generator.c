@@ -17,8 +17,6 @@
 #include <sys/time.h>
 #include <signal.h>
 
-#include <example_debug.h>
-
 #include <odp_api.h>
 
 #include <odp/helper/odph_api.h>
@@ -172,7 +170,8 @@ static void print_global_stats(int num_workers);
 static void sig_handler(int signo ODP_UNUSED)
 {
 	int i;
-
+	if (args == NULL)
+		return;
 	for (i = 0; i < args->thread_cnt; i++)
 		args->thread[i].stop = 1;
 }
@@ -559,13 +558,13 @@ static int create_pktio(const char *dev, odp_pool_t pool,
 	itf->pktio = odp_pktio_open(dev, pool, &pktio_param);
 
 	if (itf->pktio == ODP_PKTIO_INVALID) {
-		EXAMPLE_ERR("Error: pktio create failed for %s\n", dev);
+		ODPH_ERR("Error: pktio create failed for %s\n", dev);
 		return -1;
 	}
 
 	if (odp_pktio_capability(itf->pktio, &capa)) {
-		EXAMPLE_ERR("Error: Failed to get interface capabilities %s\n",
-			    dev);
+		ODPH_ERR("Error: Failed to get interface capabilities %s\n",
+			 dev);
 		return -1;
 	}
 	odp_pktio_config_init(&itf->config);
@@ -603,8 +602,8 @@ static int create_pktio(const char *dev, odp_pool_t pool,
 		itf->config.parser.layer = ODP_PROTO_LAYER_L3;
 
 	if (odp_pktio_config(itf->pktio, &itf->config)) {
-		EXAMPLE_ERR("Error: Failed to set interface configuration %s\n",
-			    dev);
+		ODPH_ERR("Error: Failed to set interface configuration %s\n",
+			 dev);
 		return -1;
 	}
 
@@ -613,8 +612,8 @@ static int create_pktio(const char *dev, odp_pool_t pool,
 		if (num_rx_queues > capa.max_input_queues) {
 			num_rx_queues = capa.max_input_queues;
 			pktin_mode = ODP_PKTIO_OP_MT;
-			EXAMPLE_DBG("Warning: Force RX multithread safe mode "
-				    "(slower)on %s\n",	dev);
+			ODPH_DBG("Warning: Force RX multithread safe mode "
+				 "(slower)on %s\n",	dev);
 		}
 
 		odp_pktin_queue_param_init(&pktin_param);
@@ -625,8 +624,8 @@ static int create_pktio(const char *dev, odp_pool_t pool,
 				ODP_SCHED_SYNC_ATOMIC;
 
 		if (odp_pktin_queue_config(itf->pktio, &pktin_param)) {
-			EXAMPLE_ERR("Error: pktin queue config failed "
-				    "for %s\n", dev);
+			ODPH_ERR("Error: pktin queue config failed for %s\n",
+				 dev);
 			return -1;
 		}
 	}
@@ -636,8 +635,8 @@ static int create_pktio(const char *dev, odp_pool_t pool,
 		if (num_tx_queues > capa.max_output_queues) {
 			num_tx_queues = capa.max_output_queues;
 			pktout_mode = ODP_PKTIO_OP_MT;
-			EXAMPLE_DBG("Warning: Force TX multithread safe mode "
-				    "(slower) on %s\n", dev);
+			ODPH_DBG("Warning: Force TX multithread safe mode "
+				 "(slower) on %s\n", dev);
 		}
 
 		odp_pktout_queue_param_init(&pktout_param);
@@ -645,21 +644,21 @@ static int create_pktio(const char *dev, odp_pool_t pool,
 		pktout_param.op_mode = pktout_mode;
 
 		if (odp_pktout_queue_config(itf->pktio, &pktout_param)) {
-			EXAMPLE_ERR("Error: pktout queue config failed for %s\n",
-				    dev);
+			ODPH_ERR("Error: pktout queue config failed for %s\n",
+				 dev);
 			return -1;
 		}
 	}
 
 	ret = odp_pktio_start(itf->pktio);
 	if (ret)
-		EXAMPLE_ABORT("Error: unable to start %s\n", dev);
+		ODPH_ABORT("Error: unable to start %s\n", dev);
 
 	itf->pktout_count = num_tx_queues;
 	if (itf->pktout_count &&
 	    odp_pktout_queue(itf->pktio, itf->pktout, itf->pktout_count) !=
 	    (int)itf->pktout_count) {
-		EXAMPLE_ERR("Error: failed to get output queues for %s\n", dev);
+		ODPH_ERR("Error: failed to get output queues for %s\n", dev);
 		return -1;
 	}
 
@@ -667,7 +666,7 @@ static int create_pktio(const char *dev, odp_pool_t pool,
 	if (!sched && itf->pktin_count &&
 	    odp_pktin_queue(itf->pktio, itf->pktin, itf->pktin_count) !=
 	    (int)itf->pktin_count) {
-		EXAMPLE_ERR("Error: failed to get input queues for %s\n", dev);
+		ODPH_ERR("Error: failed to get input queues for %s\n", dev);
 		return -1;
 	}
 
@@ -726,8 +725,8 @@ static int gen_send_thread(void *arg)
 		if (args->appl.number != -1)
 			pkt_count_max = args->appl.number;
 	} else {
-		EXAMPLE_ERR("  [%02i] Error: invalid processing mode %d\n",
-			    thr, args->appl.mode);
+		ODPH_ERR("  [%02i] Error: invalid processing mode %d\n", thr,
+			 args->appl.mode);
 		return -1;
 	}
 	pkt_array_size = args->tx_burst_size;
@@ -735,8 +734,8 @@ static int gen_send_thread(void *arg)
 	if (setup_pkt_ref_array(thr_args->pool, pktout_cfg,
 				pkt_ref_array, pkt_array_size,
 				setup_pkt_ref)) {
-		EXAMPLE_ERR("[%02i] Error: failed to create"
-			    " reference packets\n", thr);
+		ODPH_ERR("[%02i] Error: failed to create reference packets\n",
+			 thr);
 		return -1;
 	}
 
@@ -757,8 +756,8 @@ static int gen_send_thread(void *arg)
 		if (setup_pkt_array(pktout_cfg, counters,
 				    pkt_ref_array, pkt_array,
 				    pkt_array_size, setup_pkt, setup_pkt_arg)) {
-			EXAMPLE_ERR("[%02i] Error: failed to setup packets\n",
-				    thr);
+			ODPH_ERR("[%02i] Error: failed to setup packets\n",
+				 thr);
 			break;
 		}
 
@@ -777,7 +776,7 @@ static int gen_send_thread(void *arg)
 				burst_size -= ret;
 				continue;
 			}
-			EXAMPLE_ERR("  [%02i] packet send failed\n", thr);
+			ODPH_ERR("  [%02i] packet send failed\n", thr);
 			odp_packet_free_multi(&pkt_array[burst_start],
 					      burst_size);
 			break;
@@ -1100,7 +1099,7 @@ static void print_global_stats(int num_workers)
 int main(int argc, char *argv[])
 {
 	odph_helper_options_t helper_options;
-	odph_odpthread_t thread_tbl[MAX_WORKERS];
+	odph_thread_t thread_tbl[MAX_WORKERS];
 	odp_pool_t pool;
 	int num_workers;
 	unsigned num_rx_queues, num_tx_queues;
@@ -1112,7 +1111,8 @@ int main(int argc, char *argv[])
 	interface_t *ifs;
 	odp_instance_t instance;
 	odp_init_t init_param;
-	odph_odpthread_params_t thr_params;
+	odph_thread_common_param_t thr_common;
+	odph_thread_param_t thr_param;
 
 	/* Signal handler has to be registered before global init in case ODP
 	 * implementation creates internal threads/processes. */
@@ -1121,7 +1121,7 @@ int main(int argc, char *argv[])
 	/* Let helper collect its own arguments (e.g. --odph_proc) */
 	argc = odph_parse_options(argc, argv);
 	if (odph_options(&helper_options)) {
-		EXAMPLE_ERR("Error: reading ODP helper options failed.\n");
+		ODPH_ERR("Error: reading ODP helper options failed.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -1130,22 +1130,28 @@ int main(int argc, char *argv[])
 
 	/* Init ODP before calling anything else */
 	if (odp_init_global(&instance, &init_param, NULL)) {
-		EXAMPLE_ERR("Error: ODP global init failed.\n");
+		ODPH_ERR("Error: ODP global init failed.\n");
 		exit(EXIT_FAILURE);
 	}
 
 	if (odp_init_local(instance, ODP_THREAD_CONTROL)) {
-		EXAMPLE_ERR("Error: ODP local init failed.\n");
+		ODPH_ERR("Error: ODP local init failed.\n");
 		exit(EXIT_FAILURE);
 	}
 
 	/* Reserve memory for args from shared mem */
 	shm = odp_shm_reserve("shm_args", sizeof(args_t),
 			      ODP_CACHE_LINE_SIZE, 0);
+
+	if (shm == ODP_SHM_INVALID) {
+		ODPH_ERR("Error: shared mem reserve failed.\n");
+		exit(EXIT_FAILURE);
+	}
+
 	args = odp_shm_addr(shm);
 
 	if (args == NULL) {
-		EXAMPLE_ERR("Error: shared mem alloc failed.\n");
+		ODPH_ERR("Error: shared mem alloc failed.\n");
 		exit(EXIT_FAILURE);
 	}
 	memset(args, 0, sizeof(*args));
@@ -1179,7 +1185,7 @@ int main(int argc, char *argv[])
 	/* ping mode need two workers */
 	if (args->appl.mode == APPL_MODE_PING) {
 		if (num_workers < 2) {
-			EXAMPLE_ERR("Need at least two worker threads\n");
+			ODPH_ERR("Need at least two worker threads\n");
 			exit(EXIT_FAILURE);
 		} else {
 			num_workers = 2;
@@ -1212,7 +1218,7 @@ int main(int argc, char *argv[])
 	pool = odp_pool_create("packet_pool", &params);
 
 	if (pool == ODP_POOL_INVALID) {
-		EXAMPLE_ERR("Error: packet pool create failed.\n");
+		ODPH_ERR("Error: packet pool create failed.\n");
 		exit(EXIT_FAILURE);
 	}
 	odp_pool_print(pool);
@@ -1237,8 +1243,8 @@ int main(int argc, char *argv[])
 
 		if (create_pktio(args->appl.if_names[i], pool, num_rx_queues,
 				 num_tx_queues, &ifs[i])) {
-			EXAMPLE_ERR("Error: create interface %s failed.\n",
-				    args->appl.if_names[i]);
+			ODPH_ERR("Error: create interface %s failed.\n",
+				 args->appl.if_names[i]);
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -1247,9 +1253,11 @@ int main(int argc, char *argv[])
 	memset(thread_tbl, 0, sizeof(thread_tbl));
 
 	/* Init threads params */
-	memset(&thr_params, 0, sizeof(thr_params));
-	thr_params.thr_type = ODP_THREAD_WORKER;
-	thr_params.instance = instance;
+	memset(&thr_param, 0, sizeof(thr_param));
+	thr_param.thr_type = ODP_THREAD_WORKER;
+
+	memset(&thr_common, 0, sizeof(thr_common));
+	thr_common.instance = instance;
 
 	/* num workers + print thread */
 	odp_barrier_init(&args->barrier, num_workers + 1);
@@ -1269,17 +1277,17 @@ int main(int argc, char *argv[])
 		thr_args->pool = pool;
 		thr_args->mode = args->appl.mode;
 
-		memset(&thr_params, 0, sizeof(thr_params));
 		if (args->appl.sched)
-			thr_params.start = gen_recv_thread;
+			thr_param.start = gen_recv_thread;
 		else
-			thr_params.start = gen_recv_direct_thread;
-		thr_params.arg      = thr_args;
-		thr_params.thr_type = ODP_THREAD_WORKER;
-		thr_params.instance = instance;
+			thr_param.start = gen_recv_direct_thread;
 
-		odph_odpthreads_create(&thread_tbl[PING_THR_RX],
-				       &cpu_mask, &thr_params);
+		thr_param.arg = thr_args;
+
+		thr_common.cpumask = &cpu_mask;
+
+		odph_thread_create(&thread_tbl[PING_THR_RX], &thr_common,
+				   &thr_param, 1);
 
 		thr_args = &args->thread[PING_THR_TX];
 		thr_args->tx.pktout = ifs[0].pktout[0];
@@ -1290,11 +1298,11 @@ int main(int argc, char *argv[])
 		odp_cpumask_zero(&cpu_mask);
 		odp_cpumask_set(&cpu_mask, cpu_next);
 
-		thr_params.start = gen_send_thread;
-		thr_params.arg   = thr_args;
+		thr_param.start = gen_send_thread;
+		thr_param.arg   = thr_args;
 
-		odph_odpthreads_create(&thread_tbl[PING_THR_TX],
-				       &cpu_mask, &thr_params);
+		odph_thread_create(&thread_tbl[PING_THR_TX], &thr_common,
+				   &thr_param, 1);
 
 	} else {
 		int cpu = odp_cpumask_first(&cpumask);
@@ -1364,7 +1372,7 @@ int main(int argc, char *argv[])
 				else
 					thr_run_func = gen_recv_direct_thread;
 			} else {
-				EXAMPLE_ERR("ERR MODE\n");
+				ODPH_ERR("ERR MODE\n");
 				exit(EXIT_FAILURE);
 			}
 			/*
@@ -1375,11 +1383,13 @@ int main(int argc, char *argv[])
 			odp_cpumask_zero(&thd_mask);
 			odp_cpumask_set(&thd_mask, cpu);
 
-			thr_params.start = thr_run_func;
-			thr_params.arg   = &args->thread[i];
+			thr_param.start = thr_run_func;
+			thr_param.arg   = &args->thread[i];
 
-			odph_odpthreads_create(&thread_tbl[i],
-					       &thd_mask, &thr_params);
+			thr_common.cpumask = &thd_mask;
+
+			odph_thread_create(&thread_tbl[i], &thr_common,
+					   &thr_param, 1);
 			cpu = odp_cpumask_next(&cpumask, cpu);
 		}
 	}
@@ -1387,8 +1397,7 @@ int main(int argc, char *argv[])
 	print_global_stats(num_workers);
 
 	/* Master thread waits for other threads to exit */
-	for (i = 0; i < num_workers; ++i)
-		odph_odpthreads_join(&thread_tbl[i]);
+	odph_thread_join(thread_tbl, num_workers);
 
 	for (i = 0; i < args->appl.if_count; ++i)
 		odp_pktio_stop(ifs[i].pktio);
@@ -1398,6 +1407,8 @@ int main(int argc, char *argv[])
 	free(ifs);
 	free(args->appl.if_names);
 	free(args->appl.if_str);
+	args = NULL;
+	odp_mb_full();
 	if (0 != odp_pool_destroy(pool))
 		fprintf(stderr, "unable to destroy pool \"pool\"\n");
 	if (0 != odp_shm_free(shm))
@@ -1484,9 +1495,9 @@ static void parse_args(int argc, char *argv[], appl_args_t *appl_args)
 			if (odp_cpumask_count(&cpumask_and) <
 			    odp_cpumask_count(&cpumask_args) ||
 			    odp_cpumask_count(&cpumask_args) > MAX_WORKERS) {
-				EXAMPLE_ERR("Wrong cpu mask, max cpu's:%d\n",
-					    num_workers < MAX_WORKERS ?
-					    num_workers : MAX_WORKERS);
+				ODPH_ERR("Wrong cpu mask, max cpu's:%d\n",
+					 num_workers < MAX_WORKERS ?
+					 num_workers : MAX_WORKERS);
 				exit(EXIT_FAILURE);
 			}
 			break;
@@ -1539,35 +1550,35 @@ static void parse_args(int argc, char *argv[], appl_args_t *appl_args)
 			} else if (optarg[0] == 'r') {
 				appl_args->mode = APPL_MODE_RCV;
 			} else {
-				EXAMPLE_ERR("wrong mode!\n");
+				ODPH_ERR("wrong mode!\n");
 				exit(EXIT_FAILURE);
 			}
 			break;
 
 		case 'a':
 			if (odph_eth_addr_parse(&appl_args->srcmac, optarg)) {
-				EXAMPLE_ERR("wrong src mac:%s\n", optarg);
+				ODPH_ERR("wrong src mac:%s\n", optarg);
 				exit(EXIT_FAILURE);
 			}
 			break;
 
 		case 'b':
 			if (odph_eth_addr_parse(&appl_args->dstmac, optarg)) {
-				EXAMPLE_ERR("wrong dst mac:%s\n", optarg);
+				ODPH_ERR("wrong dst mac:%s\n", optarg);
 				exit(EXIT_FAILURE);
 			}
 			break;
 
 		case 's':
 			if (scan_ip(optarg, &appl_args->srcip) != 1) {
-				EXAMPLE_ERR("wrong src ip:%s\n", optarg);
+				ODPH_ERR("wrong src ip:%s\n", optarg);
 				exit(EXIT_FAILURE);
 			}
 			break;
 
 		case 'd':
 			if (scan_ip(optarg, &appl_args->dstip) != 1) {
-				EXAMPLE_ERR("wrong dst ip:%s\n", optarg);
+				ODPH_ERR("wrong dst ip:%s\n", optarg);
 				exit(EXIT_FAILURE);
 			}
 			break;
@@ -1599,23 +1610,23 @@ static void parse_args(int argc, char *argv[], appl_args_t *appl_args)
 		case 'i':
 			appl_args->interval = atoi(optarg);
 			if (appl_args->interval <= 200 && geteuid() != 0) {
-				EXAMPLE_ERR("should be root user\n");
+				ODPH_ERR("should be root user\n");
 				exit(EXIT_FAILURE);
 			}
 			break;
 		case 'x':
 			appl_args->udp_tx_burst = atoi(optarg);
 			if (appl_args->udp_tx_burst >  MAX_UDP_TX_BURST) {
-				EXAMPLE_ERR("wrong UDP Tx burst size (max %d)\n",
-					    MAX_UDP_TX_BURST);
+				ODPH_ERR("wrong UDP Tx burst size (max %d)\n",
+					 MAX_UDP_TX_BURST);
 				exit(EXIT_FAILURE);
 			}
 			break;
 		case 'r':
 			appl_args->rx_burst = atoi(optarg);
 			if (appl_args->rx_burst >  MAX_RX_BURST) {
-				EXAMPLE_ERR("wrong Rx burst size (max %d)\n",
-					    MAX_RX_BURST);
+				ODPH_ERR("wrong Rx burst size (max %d)\n",
+					 MAX_RX_BURST);
 				exit(EXIT_FAILURE);
 			}
 			break;

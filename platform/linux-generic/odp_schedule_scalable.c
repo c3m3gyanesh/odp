@@ -5,7 +5,6 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
-#include <config.h>
 
 #include <odp/api/align.h>
 #include <odp/api/atomic.h>
@@ -46,7 +45,7 @@
 
 #define FLAG_PKTIN 0x80
 
-ODP_STATIC_ASSERT(CHECK_IS_POWER2(ODP_CONFIG_QUEUES),
+ODP_STATIC_ASSERT(CHECK_IS_POWER2(CONFIG_MAX_SCHED_QUEUES),
 		  "Number_of_queues_is_not_power_of_two");
 
 #define SCHED_GROUP_JOIN 0
@@ -777,7 +776,7 @@ static int poll_pktin(sched_elem_t *elem, odp_event_t ev[], int num_evts)
 	/* For ordered queues only */
 	reorder_context_t *rctx;
 	reorder_window_t *rwin = NULL;
-	uint32_t sn;
+	uint32_t sn = 0;
 	uint32_t idx;
 
 	if (is_ordered(elem)) {
@@ -1996,7 +1995,7 @@ static int schedule_term_local(void)
 
 static void schedule_config_init(odp_schedule_config_t *config)
 {
-	config->num_queues = ODP_CONFIG_QUEUES - NUM_INTERNAL_QUEUES;
+	config->num_queues = CONFIG_MAX_SCHED_QUEUES;
 	config->queue_size = 0; /* FIXME ? */
 }
 
@@ -2033,8 +2032,8 @@ static int thr_rem(odp_schedule_group_t group, int thr)
 	return 0;
 }
 
-static int init_queue(uint32_t queue_index,
-		      const odp_schedule_param_t *sched_param)
+static int create_queue(uint32_t queue_index,
+			const odp_schedule_param_t *sched_param)
 {
 	/* Not used in scalable scheduler. */
 	(void)queue_index;
@@ -2064,8 +2063,9 @@ static int ord_enq_multi(odp_queue_t handle, void *buf_hdr[], int num,
 	int actual;
 
 	ts = sched_ts;
-	if (ts && odp_unlikely(ts->out_of_order)) {
-		queue = qentry_from_int(handle);
+	queue = qentry_from_int(handle);
+	if (ts && odp_unlikely(ts->out_of_order) &&
+	    (queue->s.param.order == ODP_QUEUE_ORDER_KEEP)) {
 		actual = rctx_save(queue, (odp_buffer_hdr_t **)buf_hdr, num);
 		*ret = actual;
 		return 1;
@@ -2127,7 +2127,7 @@ static int schedule_capability(odp_schedule_capability_t *capa)
 	capa->max_ordered_locks = schedule_max_ordered_locks();
 	capa->max_groups = num_grps();
 	capa->max_prios = schedule_num_prio();
-	capa->max_queues = ODP_CONFIG_QUEUES - NUM_INTERNAL_QUEUES;
+	capa->max_queues = CONFIG_MAX_SCHED_QUEUES;
 	capa->max_queue_size = 0;
 
 	return 0;
@@ -2138,7 +2138,7 @@ const schedule_fn_t schedule_scalable_fn = {
 	.thr_add	= thr_add,
 	.thr_rem	= thr_rem,
 	.num_grps	= num_grps,
-	.init_queue	= init_queue,
+	.create_queue	= create_queue,
 	.destroy_queue	= destroy_queue,
 	.sched_queue	= sched_queue,
 	.ord_enq_multi	= ord_enq_multi,

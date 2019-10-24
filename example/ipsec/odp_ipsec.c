@@ -20,8 +20,6 @@
 #include <unistd.h>
 #include <inttypes.h>
 
-#include <example_debug.h>
-
 #include <odp_api.h>
 
 #include <odp/helper/odph_api.h>
@@ -98,6 +96,7 @@ typedef struct {
 	odp_barrier_t sync_barrier;
 	odp_queue_t poll_queues[MAX_POLL_QUEUES];
 	int num_polled_queues;
+	volatile int stop_workers;
 } global_data_t;
 
 /* helper funcs */
@@ -241,7 +240,7 @@ typedef odp_queue_t (*queue_create_func_t)
 typedef odp_event_t (*schedule_func_t) (odp_queue_t *);
 
 static queue_create_func_t queue_create;
-static schedule_func_t schedule;
+static schedule_func_t schedule_fn;
 
 /**
  * odp_queue_create wrapper to enable polling versus scheduling
@@ -279,7 +278,7 @@ odp_queue_t polled_odp_queue_create(const char *name,
 static inline
 odp_event_t odp_schedule_cb(odp_queue_t *from)
 {
-	return odp_schedule(from, ODP_SCHED_WAIT);
+	return odp_schedule(from, ODP_SCHED_NO_WAIT);
 }
 
 /**
@@ -290,18 +289,15 @@ odp_event_t polled_odp_schedule_cb(odp_queue_t *from)
 {
 	int idx = 0;
 
-	while (1) {
-		if (idx >= global->num_polled_queues)
-			idx = 0;
-
+	while (idx < global->num_polled_queues) {
 		odp_queue_t queue = global->poll_queues[idx++];
-		odp_event_t buf;
+		odp_event_t ev;
 
-		buf = odp_queue_deq(queue);
+		ev = odp_queue_deq(queue);
 
-		if (ODP_EVENT_INVALID != buf) {
+		if (ODP_EVENT_INVALID != ev) {
 			*from = queue;
-			return buf;
+			return ev;
 		}
 	}
 
@@ -332,7 +328,7 @@ void ipsec_init_pre(void)
 
 	global->completionq = queue_create("completion", &qparam);
 	if (ODP_QUEUE_INVALID == global->completionq) {
-		EXAMPLE_ERR("Error: completion queue creation failed\n");
+		ODPH_ERR("Error: completion queue creation failed\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -343,7 +339,7 @@ void ipsec_init_pre(void)
 
 	global->seqnumq = queue_create("seqnum", &qparam);
 	if (ODP_QUEUE_INVALID == global->seqnumq) {
-		EXAMPLE_ERR("Error: sequence number queue creation failed\n");
+		ODPH_ERR("Error: sequence number queue creation failed\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -357,7 +353,7 @@ void ipsec_init_pre(void)
 	global->out_pool = odp_pool_create("out_pool", &params);
 
 	if (ODP_POOL_INVALID == global->out_pool) {
-		EXAMPLE_ERR("Error: message pool create failed.\n");
+		ODPH_ERR("Error: message pool create failed.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -409,7 +405,7 @@ void ipsec_init_post(crypto_api_mode_e api_mode)
 						     entry->input,
 						     global->completionq,
 						     global->out_pool)) {
-				EXAMPLE_ERR("Error: IPSec cache entry failed.\n"
+				ODPH_ERR("Error: IPSec cache entry failed.\n"
 						);
 				exit(EXIT_FAILURE);
 			}
@@ -475,7 +471,7 @@ void initialize_intf(char *intf)
 	 */
 	pktio = odp_pktio_open(intf, global->pkt_pool, &pktio_param);
 	if (ODP_PKTIO_INVALID == pktio) {
-		EXAMPLE_ERR("Error: pktio create failed for %s\n", intf);
+		ODPH_ERR("Error: pktio create failed for %s\n", intf);
 		exit(EXIT_FAILURE);
 	}
 
@@ -483,36 +479,35 @@ void initialize_intf(char *intf)
 	pktin_param.queue_param.sched.sync = ODP_SCHED_SYNC_ATOMIC;
 
 	if (odp_pktin_queue_config(pktio, &pktin_param)) {
-		EXAMPLE_ERR("Error: pktin config failed for %s\n", intf);
+		ODPH_ERR("Error: pktin config failed for %s\n", intf);
 		exit(EXIT_FAILURE);
 	}
 
 	if (odp_pktout_queue_config(pktio, NULL)) {
-		EXAMPLE_ERR("Error: pktout config failed for %s\n", intf);
+		ODPH_ERR("Error: pktout config failed for %s\n", intf);
 		exit(EXIT_FAILURE);
 	}
 
 	if (odp_pktin_event_queue(pktio, &inq, 1) != 1) {
-		EXAMPLE_ERR("Error: failed to get input queue for %s\n", intf);
+		ODPH_ERR("Error: failed to get input queue for %s\n", intf);
 		exit(EXIT_FAILURE);
 	}
 
 	if (odp_pktout_queue(pktio, &pktout, 1) != 1) {
-		EXAMPLE_ERR("Error: failed to get pktout queue for %s\n", intf);
+		ODPH_ERR("Error: failed to get pktout queue for %s\n", intf);
 		exit(EXIT_FAILURE);
 	}
 
 	ret = odp_pktio_start(pktio);
 	if (ret) {
-		EXAMPLE_ERR("Error: unable to start %s\n", intf);
+		ODPH_ERR("Error: unable to start %s\n", intf);
 		exit(EXIT_FAILURE);
 	}
 
 	/* Read the source MAC address for this interface */
 	ret = odp_pktio_mac_addr(pktio, src_mac, sizeof(src_mac));
 	if (ret <= 0) {
-		EXAMPLE_ERR("Error: failed during MAC address get for %s\n",
-			    intf);
+		ODPH_ERR("Error: failed during MAC address get for %s\n", intf);
 		exit(EXIT_FAILURE);
 	}
 
@@ -537,7 +532,7 @@ void initialize_intf(char *intf)
  */
 static
 pkt_disposition_e do_input_verify(odp_packet_t pkt,
-				  pkt_ctx_t *ctx EXAMPLE_UNUSED)
+				  pkt_ctx_t *ctx ODP_UNUSED)
 {
 	if (odp_unlikely(odp_packet_has_error(pkt)))
 		return PKT_DROP;
@@ -664,13 +659,17 @@ pkt_disposition_e do_ipsec_in_classify(odp_packet_t *pkt,
 	*skip = FALSE;
 	ctx->state = PKT_STATE_IPSEC_IN_FINISH;
 	if (entry->async) {
-		if (odp_crypto_op_enq(pkt, &out_pkt, &params, 1))
-			abort();
+		if (odp_crypto_op_enq(pkt, &out_pkt, &params, 1) != 1) {
+			ODPH_ERR("Error: odp_crypto_op_enq() failed\n");
+			exit(EXIT_FAILURE);
+		}
 		return PKT_POSTED;
 	}
 
-	if (odp_crypto_op(pkt, &out_pkt, &params, 1))
-		abort();
+	if (odp_crypto_op(pkt, &out_pkt, &params, 1) != 1) {
+		ODPH_ERR("Error: odp_crypto_op() failed\n");
+		exit(EXIT_FAILURE);
+	}
 	*pkt = out_pkt;
 
 	return PKT_CONTINUE;
@@ -958,8 +957,10 @@ pkt_disposition_e do_ipsec_out_seq(odp_packet_t *pkt,
 			ret = odp_random_data((uint8_t *)ctx->ipsec.tun_hdr_id,
 					      sizeof(*ctx->ipsec.tun_hdr_id),
 					      1);
-			if (ret != sizeof(*ctx->ipsec.tun_hdr_id))
-				abort();
+			if (ret != sizeof(*ctx->ipsec.tun_hdr_id)) {
+				ODPH_ERR("Error: Not enough random data\n");
+				exit(EXIT_FAILURE);
+			}
 		}
 	}
 
@@ -968,14 +969,17 @@ pkt_disposition_e do_ipsec_out_seq(odp_packet_t *pkt,
 	/* Issue crypto request */
 	if (entry->async) {
 		if (odp_crypto_op_enq(pkt, &out_pkt,
-				      &ctx->ipsec.params, 1))
-			abort();
+				      &ctx->ipsec.params, 1) != 1) {
+			ODPH_ERR("Error: odp_crypto_op_enq() failed\n");
+			exit(EXIT_FAILURE);
+		}
 		return PKT_POSTED;
 	}
 
-	if (odp_crypto_op(pkt, &out_pkt,
-			  &ctx->ipsec.params, 1))
-		abort();
+	if (odp_crypto_op(pkt, &out_pkt, &ctx->ipsec.params, 1) != 1) {
+		ODPH_ERR("Error: odp_crypto_op() failed\n");
+		exit(EXIT_FAILURE);
+	}
 	*pkt = out_pkt;
 
 	return PKT_CONTINUE;
@@ -1034,7 +1038,7 @@ pkt_disposition_e do_ipsec_out_finish(odp_packet_t pkt,
  * @return NULL (should never return)
  */
 static
-int pktio_thread(void *arg EXAMPLE_UNUSED)
+int pktio_thread(void *arg ODP_UNUSED)
 {
 	int thr;
 	odp_packet_t pkt;
@@ -1048,14 +1052,17 @@ int pktio_thread(void *arg EXAMPLE_UNUSED)
 	odp_barrier_wait(&global->sync_barrier);
 
 	/* Loop packets */
-	for (;;) {
+	while (global->stop_workers == 0) {
 		pkt_disposition_e rc;
 		pkt_ctx_t   *ctx;
 		odp_queue_t  dispatchq;
 		odp_event_subtype_t subtype;
 
 		/* Use schedule to get event from any input queue */
-		ev = schedule(&dispatchq);
+		ev = schedule_fn(&dispatchq);
+
+		if (ev == ODP_EVENT_INVALID)
+			continue;
 
 		/* Determine new work versus completion or sequence number */
 		if (ODP_EVENT_PACKET == odp_event_types(ev, &subtype)) {
@@ -1072,7 +1079,8 @@ int pktio_thread(void *arg EXAMPLE_UNUSED)
 				ctx->state = PKT_STATE_INPUT_VERIFY;
 			}
 		} else {
-			abort();
+			ODPH_ERR("Error: Bad event type\n");
+			exit(EXIT_FAILURE);
 		}
 
 		/*
@@ -1176,7 +1184,6 @@ int pktio_thread(void *arg EXAMPLE_UNUSED)
 		}
 	}
 
-	/* unreachable */
 	return 0;
 }
 
@@ -1201,18 +1208,18 @@ main(int argc, char *argv[])
 
 	/* create by default scheduled queues */
 	queue_create = odp_queue_create;
-	schedule = odp_schedule_cb;
+	schedule_fn = odp_schedule_cb;
 
 	/* check for using poll queues */
 	if (getenv("ODP_IPSEC_USE_POLL_QUEUES")) {
 		queue_create = polled_odp_queue_create;
-		schedule = polled_odp_schedule_cb;
+		schedule_fn = polled_odp_schedule_cb;
 	}
 
 	/* Let helper collect its own arguments (e.g. --odph_proc) */
 	argc = odph_parse_options(argc, argv);
 	if (odph_options(&helper_options)) {
-		EXAMPLE_ERR("Error: reading ODP helper options failed.\n");
+		ODPH_ERR("Error: reading ODP helper options failed.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -1221,13 +1228,13 @@ main(int argc, char *argv[])
 
 	/* Init ODP before calling anything else */
 	if (odp_init_global(&instance, &init_param, NULL)) {
-		EXAMPLE_ERR("Error: ODP global init failed.\n");
+		ODPH_ERR("Error: ODP global init failed.\n");
 		exit(EXIT_FAILURE);
 	}
 
 	/* Init this thread */
 	if (odp_init_local(instance, ODP_THREAD_CONTROL)) {
-		EXAMPLE_ERR("Error: ODP local init failed.\n");
+		ODPH_ERR("Error: ODP local init failed.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -1235,14 +1242,22 @@ main(int argc, char *argv[])
 	shm = odp_shm_reserve("shm_args", sizeof(global_data_t),
 			      ODP_CACHE_LINE_SIZE, 0);
 
+	if (shm == ODP_SHM_INVALID) {
+		ODPH_ERR("Error: shared mem reserve failed.\n");
+		exit(EXIT_FAILURE);
+	}
+
 	global = odp_shm_addr(shm);
 
 	if (NULL == global) {
-		EXAMPLE_ERR("Error: shared mem alloc failed.\n");
+		ODPH_ERR("Error: shared mem alloc failed.\n");
 		exit(EXIT_FAILURE);
 	}
 	memset(global, 0, sizeof(global_data_t));
 	global->shm = shm;
+
+	/* Configure scheduler */
+	odp_schedule_config(NULL);
 
 	/* Must init our databases before parsing args */
 	ipsec_init_pre();
@@ -1280,7 +1295,7 @@ main(int argc, char *argv[])
 	global->pkt_pool = odp_pool_create("packet_pool", &params);
 
 	if (ODP_POOL_INVALID == global->pkt_pool) {
-		EXAMPLE_ERR("Error: packet pool create failed.\n");
+		ODPH_ERR("Error: packet pool create failed.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -1293,12 +1308,9 @@ main(int argc, char *argv[])
 	global->ctx_pool = odp_pool_create("ctx_pool", &params);
 
 	if (ODP_POOL_INVALID == global->ctx_pool) {
-		EXAMPLE_ERR("Error: context pool create failed.\n");
+		ODPH_ERR("Error: context pool create failed.\n");
 		exit(EXIT_FAILURE);
 	}
-
-	/* Configure scheduler */
-	odp_schedule_config(NULL);
 
 	/* Populate our IPsec cache */
 	printf("Using %s mode for crypto API\n\n",
@@ -1318,6 +1330,7 @@ main(int argc, char *argv[])
 	/*
 	 * Create and init worker threads
 	 */
+	memset(thread_tbl, 0, sizeof(thread_tbl));
 	memset(&thr_params, 0, sizeof(thr_params));
 	thr_params.start    = pktio_thread;
 	thr_params.arg      = NULL;
@@ -1336,9 +1349,12 @@ main(int argc, char *argv[])
 			sleep(1);
 		} while (!done);
 		printf("All received\n");
-	} else {
-		odph_odpthreads_join(thread_tbl);
 	}
+
+	global->stop_workers = 1;
+	odp_mb_full();
+
+	odph_odpthreads_join(thread_tbl);
 
 	/* Stop and close used pktio devices */
 	for (i = 0; i < global->appl.if_count; i++) {
@@ -1348,8 +1364,8 @@ main(int argc, char *argv[])
 			continue;
 
 		if (odp_pktio_stop(pktio) || odp_pktio_close(pktio)) {
-			EXAMPLE_ERR("Error: failed to close pktio %s\n",
-				    global->appl.if_names[i]);
+			ODPH_ERR("Error: failed to close pktio %s\n",
+				 global->appl.if_names[i]);
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -1357,26 +1373,51 @@ main(int argc, char *argv[])
 	free(global->appl.if_names);
 	free(global->appl.if_str);
 
+	if (destroy_ipsec_cache())
+		ODPH_ERR("Error: crypto session destroy failed\n");
+
+	if (odp_queue_destroy(global->completionq))
+		ODPH_ERR("Error: queue destroy failed\n");
+	if (odp_queue_destroy(global->seqnumq))
+		ODPH_ERR("Error: queue destroy failed\n");
+
+	if (odp_pool_destroy(global->pkt_pool))
+		ODPH_ERR("Error: pool destroy failed\n");
+	if (odp_pool_destroy(global->ctx_pool))
+		ODPH_ERR("Error: pool destroy failed\n");
+	if (odp_pool_destroy(global->out_pool))
+		ODPH_ERR("Error: pool destroy failed\n");
+
 	shm = odp_shm_lookup("shm_ipsec_cache");
 	if (odp_shm_free(shm) != 0)
-		EXAMPLE_ERR("Error: shm free shm_ipsec_cache failed\n");
+		ODPH_ERR("Error: shm free shm_ipsec_cache failed\n");
 	shm = odp_shm_lookup("shm_fwd_db");
 	if (odp_shm_free(shm) != 0)
-		EXAMPLE_ERR("Error: shm free shm_fwd_db failed\n");
+		ODPH_ERR("Error: shm free shm_fwd_db failed\n");
 	shm = odp_shm_lookup("shm_sa_db");
 	if (odp_shm_free(shm) != 0)
-		EXAMPLE_ERR("Error: shm free shm_sa_db failed\n");
+		ODPH_ERR("Error: shm free shm_sa_db failed\n");
 	shm = odp_shm_lookup("shm_tun_db");
 	if (odp_shm_free(shm) != 0)
-		EXAMPLE_ERR("Error: shm free shm_tun_db failed\n");
+		ODPH_ERR("Error: shm free shm_tun_db failed\n");
 	shm = odp_shm_lookup("shm_sp_db");
 	if (odp_shm_free(shm) != 0)
-		EXAMPLE_ERR("Error: shm free shm_sp_db failed\n");
+		ODPH_ERR("Error: shm free shm_sp_db failed\n");
 	shm = odp_shm_lookup("stream_db");
 	if (odp_shm_free(shm) != 0)
-		EXAMPLE_ERR("Error: shm free stream_db failed\n");
+		ODPH_ERR("Error: shm free stream_db failed\n");
 	if (odp_shm_free(global->shm)) {
-		EXAMPLE_ERR("Error: shm free global data failed\n");
+		ODPH_ERR("Error: shm free global data failed\n");
+		exit(EXIT_FAILURE);
+	}
+
+	if (odp_term_local()) {
+		ODPH_ERR("Error: term local failed\n");
+		exit(EXIT_FAILURE);
+	}
+
+	if (odp_term_global(instance)) {
+		ODPH_ERR("Error: term global failed\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -1415,7 +1456,7 @@ static void parse_args(int argc, char *argv[], appl_args_t *appl_args)
 		{NULL, 0, NULL, 0}
 	};
 
-	static const char *shortopts = "+c:i:m:h:r:p:a:e:t:s:";
+	static const char *shortopts = "+c:i:m:r:p:a:e:t:s:h";
 
 	printf("\nParsing command line options\n");
 

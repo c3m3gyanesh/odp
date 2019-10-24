@@ -18,6 +18,7 @@
 extern "C" {
 #endif
 
+#include <odp/helper/odph_debug.h>
 #include <odp/helper/chksum.h>
 #include <odp/helper/odph_cuckootable.h>
 #include <odp/helper/eth.h>
@@ -33,6 +34,7 @@ extern "C" {
 #include <odp/helper/table.h>
 #include <odp/helper/threads.h>
 #include <odp/helper/udp.h>
+#include <odp/helper/version.h>
 
 #ifdef __cplusplus
 }

@@ -4,8 +4,6 @@
  * SPDX-License-Identifier:     BSD-3-Clause
  */
 
-#include "config.h"
-
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -24,7 +22,7 @@
 #include <odp_api.h>
 #include <odp/helper/linux/pthread.h>
 #include <odp/helper/linux/process.h>
-#include "odph_debug.h"
+#include <odp/helper/odph_debug.h>
 
 static void *_odph_run_start_routine(void *arg)
 {

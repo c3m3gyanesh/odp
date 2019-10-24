@@ -4,8 +4,6 @@
  * SPDX-License-Identifier:     BSD-3-Clause
  */
 
-#include "config.h"
-
 /*-
  *   BSD LICENSE
  *
@@ -44,8 +42,8 @@
 #include <errno.h>
 #include <stdio.h>
 
-#include "odp/helper/odph_cuckootable.h"
-#include "odph_debug.h"
+#include <odp/helper/odph_cuckootable.h>
+#include <odp/helper/odph_debug.h>
 #include <odp_api.h>
 
 /* More efficient access to a map of single ullong */

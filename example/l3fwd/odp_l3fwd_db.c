@@ -11,8 +11,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <example_debug.h>
 #include <odp_api.h>
+#include <odp/helper/odph_api.h>
+
 #include <odp_l3fwd_db.h>
 
 /** Jenkins hash support.
@@ -179,7 +180,7 @@ static flow_table_t fwd_lookup_cache;
 static void create_fwd_hash_cache(void)
 {
 	odp_shm_t		hash_shm;
-	flow_bucket_t		*bucket;
+	flow_bucket_t		*bucket = NULL;
 	flow_entry_t		*flows;
 	uint32_t		bucket_count, flow_count, size;
 	uint32_t		i;
@@ -191,8 +192,9 @@ static void create_fwd_hash_cache(void)
 	size = sizeof(flow_bucket_t) * bucket_count +
 		sizeof(flow_entry_t) * flow_count;
 	hash_shm = odp_shm_reserve("flow_table", size, ODP_CACHE_LINE_SIZE, 0);
+	if (hash_shm != ODP_SHM_INVALID)
+		bucket = odp_shm_addr(hash_shm);
 
-	bucket = odp_shm_addr(hash_shm);
 	if (!bucket) {
 		/* Try the second time with small request */
 		flow_count /= 4;
@@ -201,9 +203,14 @@ static void create_fwd_hash_cache(void)
 			sizeof(flow_entry_t) * flow_count;
 		hash_shm = odp_shm_reserve("flow_table", size,
 					   ODP_CACHE_LINE_SIZE, 0);
+		if (hash_shm == ODP_SHM_INVALID) {
+			ODPH_ERR("Error: shared mem reserve failed.\n");
+			exit(EXIT_FAILURE);
+		}
+
 		bucket = odp_shm_addr(hash_shm);
 		if (!bucket) {
-			EXAMPLE_ERR("Error: shared mem alloc failed.\n");
+			ODPH_ERR("Error: shared mem alloc failed.\n");
 			exit(-1);
 		}
 	}
@@ -342,10 +349,15 @@ void init_fwd_db(void)
 			      ODP_CACHE_LINE_SIZE,
 			      0);
 
+	if (shm == ODP_SHM_INVALID) {
+		ODPH_ERR("Error: shared mem reserve failed.\n");
+		exit(EXIT_FAILURE);
+	}
+
 	fwd_db = odp_shm_addr(shm);
 
 	if (fwd_db == NULL) {
-		EXAMPLE_ERR("Error: shared mem alloc failed.\n");
+		ODPH_ERR("Error: shared mem alloc failed.\n");
 		exit(EXIT_FAILURE);
 	}
 	memset(fwd_db, 0, sizeof(*fwd_db));

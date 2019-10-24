@@ -1,5 +1,5 @@
 # Uncomment this if you need to change the CUSTOM_STR string
-#export CUSTOM_STR=https://github.com/Linaro/odp.git
+#export CUSTOM_STR=https://github.com/OpenDataPlane/odp.git
 
 include $(top_srcdir)/platform/Makefile.inc
 
@@ -90,7 +90,6 @@ noinst_HEADERS = \
 		  include/odp_bitset.h \
 		  include/odp_buffer_internal.h \
 		  include/odp_classification_datamodel.h \
-		  include/odp_classification_inlines.h \
 		  include/odp_classification_internal.h \
 		  include/odp_config_internal.h \
 		  include/odp_debug_internal.h \
@@ -111,7 +110,6 @@ noinst_HEADERS = \
 		  include/odp_packet_io_internal.h \
 		  include/odp_packet_io_ipc_internal.h \
 		  include/odp_packet_io_ring_internal.h \
-		  include/odp_packet_socket.h \
 		  include/odp_socket_common.h \
 		  include/odp_packet_io_stats_common.h \
 		  include/odp_packet_io_stats.h \
@@ -126,10 +124,13 @@ noinst_HEADERS = \
 		  include/odp_queue_basic_internal.h \
 		  include/odp_queue_lf.h \
 		  include/odp_queue_scalable_internal.h \
+		  include/odp_ring_common.h \
 		  include/odp_ring_internal.h \
 		  include/odp_ring_mpmc_internal.h \
+		  include/odp_ring_ptr_internal.h \
 		  include/odp_ring_spsc_internal.h \
 		  include/odp_ring_st_internal.h \
+		  include/odp_ring_u32_internal.h \
 		  include/odp_schedule_if.h \
 		  include/odp_schedule_scalable_config.h \
 		  include/odp_schedule_scalable.h \

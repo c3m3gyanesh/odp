@@ -756,7 +756,7 @@ static void parse_args(int argc, char *argv[], appl_args_t *appl_args)
 		{NULL, 0, NULL, 0}
 	};
 
-	static const char *shortopts = "+c:+t:+a:i:h";
+	static const char *shortopts = "+c:t:a:i:h";
 
 	appl_args->cpu_count = 1; /* use one worker by default */
 	appl_args->time = 0; /* loop forever if time to run is 0 */
@@ -908,6 +908,12 @@ int main(int argc, char **argv)
 	/* Reserve memory for args from shared mem */
 	shm = odp_shm_reserve("shm_args", sizeof(args_t),
 			      ODP_CACHE_LINE_SIZE, 0);
+
+	if (shm == ODP_SHM_INVALID) {
+		printf("Error: shared mem reserve failed.\n");
+		exit(EXIT_FAILURE);
+	}
+
 	gbl_args = odp_shm_addr(shm);
 
 	if (gbl_args == NULL) {

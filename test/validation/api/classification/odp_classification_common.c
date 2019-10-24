@@ -4,12 +4,10 @@
  * SPDX-License-Identifier:	BSD-3-Clause
  */
 
-#include "config.h"
-
 #include "odp_classification_testsuites.h"
 #include "classification.h"
 #include <odp_cunit_common.h>
-#include "test_debug.h"
+#include <odp/helper/odph_api.h>
 
 typedef struct cls_test_packet {
 	odp_u32be_t magic;
@@ -180,8 +178,15 @@ int parse_ipv4_string(const char *ipaddress, uint32_t *addr, uint32_t *mask)
 void enqueue_pktio_interface(odp_packet_t pkt, odp_pktio_t pktio)
 {
 	odp_pktout_queue_t pktout;
+	int ret;
 
-	CU_ASSERT_FATAL(odp_pktout_queue(pktio, &pktout, 1) == 1);
+	ret = odp_pktout_queue(pktio, &pktout, 1);
+
+	if (ret != 1) {
+		CU_FAIL_FATAL("No pktout queue");
+		return;
+	}
+
 	CU_ASSERT(odp_pktout_send(pktout, &pkt, 1) == 1);
 }
 
@@ -352,7 +357,7 @@ odp_packet_t create_packet(cls_packet_info_t pkt_info)
 		udp->chksum = 0;
 		odp_packet_has_udp_set(pkt, 1);
 		if (odph_udp_tcp_chksum(pkt, ODPH_CHKSUM_GENERATE, NULL) != 0) {
-			LOG_ERR("odph_udp_tcp_chksum failed\n");
+			ODPH_ERR("odph_udp_tcp_chksum failed\n");
 			return ODP_PACKET_INVALID;
 		}
 	} else {
@@ -362,7 +367,7 @@ odp_packet_t create_packet(cls_packet_info_t pkt_info)
 		tcp->cksm = 0;
 		odp_packet_has_tcp_set(pkt, 1);
 		if (odph_udp_tcp_chksum(pkt, ODPH_CHKSUM_GENERATE, NULL) != 0) {
-			LOG_ERR("odph_udp_tcp_chksum failed\n");
+			ODPH_ERR("odph_udp_tcp_chksum failed\n");
 			return ODP_PACKET_INVALID;
 		}
 

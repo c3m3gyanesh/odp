@@ -4,8 +4,6 @@
  * SPDX-License-Identifier:     BSD-3-Clause
  */
 
-#include "config.h"
-
 /**
  * @file
  *
@@ -15,8 +13,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <inttypes.h>
-
-#include <test_debug.h>
 
 /* ODP main header */
 #include <odp_api.h>
@@ -150,14 +146,14 @@ static int enqueue_events(int thr, int prio, int num_queues, int num_events,
 
 		ret = odp_buffer_alloc_multi(globals->pool, buf, num_events);
 		if (ret != num_events) {
-			LOG_ERR("  [%i] buffer alloc failed\n", thr);
+			ODPH_ERR("  [%i] buffer alloc failed\n", thr);
 			ret = ret < 0 ? 0 : ret;
 			odp_buffer_free_multi(buf, ret);
 			return -1;
 		}
 		for (k = 0; k < num_events; k++) {
 			if (!odp_buffer_is_valid(buf[k])) {
-				LOG_ERR("  [%i] buffer alloc failed\n", thr);
+				ODPH_ERR("  [%i] buffer alloc failed\n", thr);
 				odp_buffer_free_multi(buf, num_events);
 				return -1;
 			}
@@ -166,7 +162,7 @@ static int enqueue_events(int thr, int prio, int num_queues, int num_events,
 
 		ret = odp_queue_enq_multi(queue, ev, num_events);
 		if (ret != num_events) {
-			LOG_ERR("  [%i] Queue enqueue failed.\n", thr);
+			ODPH_ERR("  [%i] Queue enqueue failed.\n", thr);
 			ret = ret < 0 ? 0 : ret;
 			odp_buffer_free_multi(&buf[ret], num_events - ret);
 			return -1;
@@ -196,7 +192,7 @@ static int test_alloc_single(int thr, test_globals_t *globals)
 		temp_buf = odp_buffer_alloc(globals->pool);
 
 		if (!odp_buffer_is_valid(temp_buf)) {
-			LOG_ERR("  [%i] alloc_single failed\n", thr);
+			ODPH_ERR("  [%i] alloc_single failed\n", thr);
 			return -1;
 		}
 
@@ -233,7 +229,7 @@ static int test_alloc_multi(int thr, test_globals_t *globals)
 		ret = odp_buffer_alloc_multi(globals->pool, temp_buf,
 					     MAX_ALLOCS);
 		if (ret != MAX_ALLOCS) {
-			LOG_ERR("  [%i] buffer alloc failed\n", thr);
+			ODPH_ERR("  [%i] buffer alloc failed\n", thr);
 			ret = ret < 0 ? 0 : ret;
 			odp_buffer_free_multi(temp_buf, ret);
 			return -1;
@@ -241,7 +237,7 @@ static int test_alloc_multi(int thr, test_globals_t *globals)
 
 		for (j = 0; j < MAX_ALLOCS; j++) {
 			if (!odp_buffer_is_valid(temp_buf[j])) {
-				LOG_ERR("  [%i] alloc_multi failed\n", thr);
+				ODPH_ERR("  [%i] alloc_multi failed\n", thr);
 				odp_buffer_free_multi(temp_buf, MAX_ALLOCS);
 				return -1;
 			}
@@ -282,7 +278,7 @@ static int test_plain_queue(int thr, test_globals_t *globals)
 	buf = odp_buffer_alloc(globals->pool);
 
 	if (!odp_buffer_is_valid(buf)) {
-		LOG_ERR("  [%i] buffer alloc failed\n", thr);
+		ODPH_ERR("  [%i] buffer alloc failed\n", thr);
 		return -1;
 	}
 
@@ -305,7 +301,7 @@ static int test_plain_queue(int thr, test_globals_t *globals)
 		ev = odp_buffer_to_event(buf);
 
 		if (odp_queue_enq(queue, ev)) {
-			LOG_ERR("  [%i] Queue enqueue failed.\n", thr);
+			ODPH_ERR("  [%i] Queue enqueue failed.\n", thr);
 			odp_buffer_free(buf);
 			return -1;
 		}
@@ -323,7 +319,7 @@ static int test_plain_queue(int thr, test_globals_t *globals)
 		buf = odp_buffer_from_event(ev);
 
 		if (!odp_buffer_is_valid(buf)) {
-			LOG_ERR("  [%i] Queue empty.\n", thr);
+			ODPH_ERR("  [%i] Queue empty.\n", thr);
 			return -1;
 		}
 	}
@@ -370,7 +366,7 @@ static int test_schedule_single(const char *str, int thr,
 		ev = odp_schedule(&queue, ODP_SCHED_WAIT);
 
 		if (odp_queue_enq(queue, ev)) {
-			LOG_ERR("  [%i] Queue enqueue failed.\n", thr);
+			ODPH_ERR("  [%i] Queue enqueue failed.\n", thr);
 			odp_event_free(ev);
 			return -1;
 		}
@@ -390,18 +386,19 @@ static int test_schedule_single(const char *str, int thr,
 		tot++;
 
 		if (odp_queue_enq(queue, ev)) {
-			LOG_ERR("  [%i] Queue enqueue failed.\n", thr);
+			ODPH_ERR("  [%i] Queue enqueue failed.\n", thr);
 			odp_event_free(ev);
 			return -1;
 		}
 	}
 
-	odp_schedule_resume();
-
 	c2     = odp_cpu_cycles();
 	cycles = odp_cpu_cycles_diff(c2, c1);
 
 	odp_barrier_wait(&globals->barrier);
+
+	odp_schedule_resume();
+
 	clear_sched_queues();
 
 	cycles = cycles / tot;
@@ -443,7 +440,7 @@ static int test_schedule_many(const char *str, int thr,
 		ev = odp_schedule(&queue, ODP_SCHED_WAIT);
 
 		if (odp_queue_enq(queue, ev)) {
-			LOG_ERR("  [%i] Queue enqueue failed.\n", thr);
+			ODPH_ERR("  [%i] Queue enqueue failed.\n", thr);
 			odp_event_free(ev);
 			return -1;
 		}
@@ -463,18 +460,19 @@ static int test_schedule_many(const char *str, int thr,
 		tot++;
 
 		if (odp_queue_enq(queue, ev)) {
-			LOG_ERR("  [%i] Queue enqueue failed.\n", thr);
+			ODPH_ERR("  [%i] Queue enqueue failed.\n", thr);
 			odp_event_free(ev);
 			return -1;
 		}
 	}
 
-	odp_schedule_resume();
-
 	c2     = odp_cpu_cycles();
 	cycles = odp_cpu_cycles_diff(c2, c1);
 
 	odp_barrier_wait(&globals->barrier);
+
+	odp_schedule_resume();
+
 	clear_sched_queues();
 
 	cycles = cycles / tot;
@@ -526,7 +524,7 @@ static int test_schedule_multi(const char *str, int thr,
 
 		/* Assume we can enqueue all events */
 		if (odp_queue_enq_multi(queue, ev, num) != num) {
-			LOG_ERR("  [%i] Queue enqueue failed.\n", thr);
+			ODPH_ERR("  [%i] Queue enqueue failed.\n", thr);
 			return -1;
 		}
 	}
@@ -552,17 +550,18 @@ static int test_schedule_multi(const char *str, int thr,
 
 		/* Assume we can enqueue all events */
 		if (odp_queue_enq_multi(queue, ev, num) != num) {
-			LOG_ERR("  [%i] Queue enqueue failed.\n", thr);
+			ODPH_ERR("  [%i] Queue enqueue failed.\n", thr);
 			return -1;
 		}
 	}
-
-	odp_schedule_resume();
 
 	c2     = odp_cpu_cycles();
 	cycles = odp_cpu_cycles_diff(c2, c1);
 
 	odp_barrier_wait(&globals->barrier);
+
+	odp_schedule_resume();
+
 	clear_sched_queues();
 
 	if (tot)
@@ -602,7 +601,7 @@ static int run_thread(void *arg ODP_UNUSED)
 	globals = odp_shm_addr(shm);
 
 	if (globals == NULL) {
-		LOG_ERR("Shared mem lookup failed\n");
+		ODPH_ERR("Shared mem lookup failed\n");
 		return -1;
 	}
 
@@ -796,7 +795,7 @@ static void parse_args(int argc, char *argv[], test_args_t *args)
 int main(int argc, char *argv[])
 {
 	odph_helper_options_t helper_options;
-	odph_odpthread_t *thread_tbl;
+	odph_thread_t *thread_tbl;
 	test_args_t args;
 	int num_workers;
 	odp_cpumask_t cpumask;
@@ -810,7 +809,8 @@ int main(int argc, char *argv[])
 	int ret = 0;
 	odp_instance_t instance;
 	odp_init_t init_param;
-	odph_odpthread_params_t thr_params;
+	odph_thread_common_param_t thr_common;
+	odph_thread_param_t thr_param;
 	odp_queue_capability_t capa;
 	odp_pool_capability_t pool_capa;
 	odp_schedule_config_t schedule_config;
@@ -821,7 +821,7 @@ int main(int argc, char *argv[])
 	/* Let helper collect its own arguments (e.g. --odph_proc) */
 	argc = odph_parse_options(argc, argv);
 	if (odph_options(&helper_options)) {
-		LOG_ERR("Error: reading ODP helper options failed.\n");
+		ODPH_ERR("Error: reading ODP helper options failed.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -833,7 +833,7 @@ int main(int argc, char *argv[])
 
 	/* ODP global init */
 	if (odp_init_global(&instance, &init_param, NULL)) {
-		LOG_ERR("ODP global init failed.\n");
+		ODPH_ERR("ODP global init failed.\n");
 		return -1;
 	}
 
@@ -842,7 +842,7 @@ int main(int argc, char *argv[])
 	 * setting up resources for worker threads.
 	 */
 	if (odp_init_local(instance, ODP_THREAD_CONTROL)) {
-		LOG_ERR("ODP global init failed.\n");
+		ODPH_ERR("ODP global init failed.\n");
 		return -1;
 	}
 
@@ -857,9 +857,9 @@ int main(int argc, char *argv[])
 	printf("first CPU:          %i\n", odp_cpumask_first(&cpumask));
 	printf("cpu mask:           %s\n", cpumaskstr);
 
-	thread_tbl = calloc(sizeof(odph_odpthread_t), num_workers);
+	thread_tbl = calloc(sizeof(odph_thread_t), num_workers);
 	if (!thread_tbl) {
-		LOG_ERR("no memory for thread_tbl\n");
+		ODPH_ERR("no memory for thread_tbl\n");
 		return -1;
 	}
 
@@ -869,7 +869,7 @@ int main(int argc, char *argv[])
 	shm = odp_shm_reserve("test_globals",
 			      sizeof(test_globals_t), ODP_CACHE_LINE_SIZE, 0);
 	if (shm == ODP_SHM_INVALID) {
-		LOG_ERR("Shared memory reserve failed.\n");
+		ODPH_ERR("Shared memory reserve failed.\n");
 		return -1;
 	}
 
@@ -881,7 +881,7 @@ int main(int argc, char *argv[])
 	 * Create message pool
 	 */
 	if (odp_pool_capability(&pool_capa)) {
-		LOG_ERR("Pool capabilities failed.\n");
+		ODPH_ERR("Pool capabilities failed.\n");
 		return -1;
 	}
 
@@ -898,14 +898,14 @@ int main(int argc, char *argv[])
 	pool = odp_pool_create("msg_pool", &params);
 
 	if (pool == ODP_POOL_INVALID) {
-		LOG_ERR("Pool create failed.\n");
+		ODPH_ERR("Pool create failed.\n");
 		return -1;
 	}
 
 	globals->pool = pool;
 
 	if (odp_queue_capability(&capa)) {
-		LOG_ERR("Fetching queue capabilities failed.\n");
+		ODPH_ERR("Fetching queue capabilities failed.\n");
 		return -1;
 	}
 
@@ -925,8 +925,8 @@ int main(int argc, char *argv[])
 		globals->queues_per_prio--;
 
 	if (globals->queues_per_prio <= 0) {
-		LOG_ERR("Not enough queues. At least 1 plain and %d scheduled "
-			"queues required.\n", NUM_PRIOS);
+		ODPH_ERR("Not enough queues. At least 1 plain and %d scheduled "
+			 "queues required.\n", NUM_PRIOS);
 		return -1;
 	}
 
@@ -936,7 +936,7 @@ int main(int argc, char *argv[])
 	plain_queue = odp_queue_create("plain_queue", NULL);
 
 	if (plain_queue == ODP_QUEUE_INVALID) {
-		LOG_ERR("Plain queue create failed.\n");
+		ODPH_ERR("Plain queue create failed.\n");
 		return -1;
 	}
 
@@ -970,7 +970,7 @@ int main(int argc, char *argv[])
 			queue = odp_queue_create(name, &param);
 
 			if (queue == ODP_QUEUE_INVALID) {
-				LOG_ERR("Schedule queue create failed.\n");
+				ODPH_ERR("Schedule queue create failed.\n");
 				return -1;
 			}
 
@@ -980,7 +980,7 @@ int main(int argc, char *argv[])
 						  &globals->queue_ctx[i][j],
 						  sizeof(queue_context_t))
 						  < 0) {
-				LOG_ERR("Queue context set failed.\n");
+				ODPH_ERR("Queue context set failed.\n");
 				return -1;
 			}
 		}
@@ -997,15 +997,21 @@ int main(int argc, char *argv[])
 	globals->first_thr = -1;
 
 	/* Create and launch worker threads */
-	memset(&thr_params, 0, sizeof(thr_params));
-	thr_params.thr_type = ODP_THREAD_WORKER;
-	thr_params.instance = instance;
-	thr_params.start = run_thread;
-	thr_params.arg   = NULL;
-	odph_odpthreads_create(thread_tbl, &cpumask, &thr_params);
+	memset(&thr_common, 0, sizeof(thr_common));
+	memset(&thr_param, 0, sizeof(thr_param));
+
+	thr_param.thr_type = ODP_THREAD_WORKER;
+	thr_param.start    = run_thread;
+	thr_param.arg      = NULL;
+
+	thr_common.instance = instance;
+	thr_common.cpumask  = &cpumask;
+	thr_common.share_param = 1;
+
+	odph_thread_create(thread_tbl, &thr_common, &thr_param, num_workers);
 
 	/* Wait for worker threads to terminate */
-	odph_odpthreads_join(thread_tbl);
+	odph_thread_join(thread_tbl, num_workers);
 	free(thread_tbl);
 
 	printf("ODP example complete\n\n");

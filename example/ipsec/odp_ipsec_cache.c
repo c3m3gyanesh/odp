@@ -7,8 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <example_debug.h>
-
 #include <odp_api.h>
 
 #include <odp/helper/ipsec.h>
@@ -21,23 +19,28 @@ ipsec_cache_t *ipsec_cache;
 void init_ipsec_cache(void)
 {
 	odp_shm_t shm;
+	int i;
 
 	shm = odp_shm_reserve("shm_ipsec_cache",
 			      sizeof(ipsec_cache_t),
 			      ODP_CACHE_LINE_SIZE,
 			      0);
 	if (shm == ODP_SHM_INVALID) {
-		EXAMPLE_ERR("Error: shared mem alloc failed.\n");
+		ODPH_ERR("Error: shared mem alloc failed.\n");
 		exit(EXIT_FAILURE);
 	}
 
 	ipsec_cache = odp_shm_addr(shm);
 
 	if (ipsec_cache == NULL) {
-		EXAMPLE_ERR("Error: shared mem alloc failed.\n");
+		ODPH_ERR("Error: shared mem alloc failed.\n");
 		exit(EXIT_FAILURE);
 	}
 	memset(ipsec_cache, 0, sizeof(*ipsec_cache));
+
+	for (i = 0; i < MAX_DB; i++)
+		ipsec_cache->array[i].state.session =
+		ODP_CRYPTO_SESSION_INVALID;
 }
 
 int create_ipsec_cache_entry(sa_db_entry_t *cipher_sa,
@@ -212,7 +215,7 @@ ipsec_cache_entry_t *find_ipsec_cache_entry_in(uint32_t src_ip,
 
 ipsec_cache_entry_t *find_ipsec_cache_entry_out(uint32_t src_ip,
 						uint32_t dst_ip,
-						uint8_t proto EXAMPLE_UNUSED)
+						uint8_t proto ODP_UNUSED)
 {
 	ipsec_cache_entry_t *entry = ipsec_cache->out_list;
 
@@ -222,4 +225,19 @@ ipsec_cache_entry_t *find_ipsec_cache_entry_out(uint32_t src_ip,
 			break;
 	}
 	return entry;
+}
+
+int destroy_ipsec_cache(void)
+{
+	ipsec_cache_entry_t *entry;
+	int i;
+	int ret = 0;
+
+	for (i = 0; i < MAX_DB; i++) {
+		entry = &ipsec_cache->array[i];
+		if (entry->state.session != ODP_CRYPTO_SESSION_INVALID)
+			ret += odp_crypto_session_destroy(entry->state.session);
+	}
+
+	return ret;
 }

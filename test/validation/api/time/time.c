@@ -4,11 +4,14 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include "config.h"
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#include <time.h>
 
 #include <odp_api.h>
 #include "odp_cunit_common.h"
-#include <time.h>
 
 #define BUSY_LOOP_CNT		30000000    /* used for t > min resolution */
 #define BUSY_LOOP_CNT_LONG	6000000000  /* used for t > 4 sec */
@@ -27,6 +30,17 @@ typedef odp_time_t time_from_ns_cb(uint64_t ns);
 static void time_test_constants(void)
 {
 	uint64_t ns;
+
+	CU_ASSERT(ODP_TIME_USEC_IN_NS == 1000);
+
+	ns = ODP_TIME_HOUR_IN_NS;
+	CU_ASSERT(ns == 60 * ODP_TIME_MIN_IN_NS);
+	ns = ODP_TIME_MIN_IN_NS;
+	CU_ASSERT(ns == 60 * ODP_TIME_SEC_IN_NS);
+	ns = ODP_TIME_SEC_IN_NS;
+	CU_ASSERT(ns == 1000 * ODP_TIME_MSEC_IN_NS);
+	ns = ODP_TIME_MSEC_IN_NS;
+	CU_ASSERT(ns == 1000 * ODP_TIME_USEC_IN_NS);
 
 	ns = ODP_TIME_SEC_IN_NS / 1000;
 	CU_ASSERT(ns == ODP_TIME_MSEC_IN_NS);

@@ -4,8 +4,6 @@
  * SPDX-License-Identifier:     BSD-3-Clause
  */
 
-#include "config.h"
-
 /*-
  *   BSD LICENSE
  *
@@ -50,7 +48,6 @@
 #include <time.h>
 
 #include <odp_api.h>
-#include <odph_debug.h>
 #include <odp/helper/odph_api.h>
 
 /*******************************************************************************
@@ -543,7 +540,7 @@ test_cuckoo_hash_table(void)
 	return 0;
 }
 
-int main(int argc ODPH_UNUSED, char *argv[] ODPH_UNUSED)
+int main(int argc ODP_UNUSED, char *argv[] ODP_UNUSED)
 {
 	odp_instance_t instance;
 	int ret = 0;

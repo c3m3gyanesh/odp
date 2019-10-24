@@ -1,10 +1,9 @@
 /* Copyright (c) 2013-2018, Linaro Limited
+ * Copyright (c) 2019, Nokia
  * All rights reserved.
  *
  * SPDX-License-Identifier:     BSD-3-Clause
  */
-
-#include "config.h"
 
 #include <odp/api/buffer.h>
 #include <odp_pool_internal.h>
@@ -40,7 +39,7 @@ void *odp_buffer_addr(odp_buffer_t buf)
 {
 	odp_buffer_hdr_t *hdr = buf_hdl_to_hdr(buf);
 
-	return hdr->seg[0].data;
+	return hdr->base_data;
 }
 
 uint32_t odp_buffer_size(odp_buffer_t buf)
@@ -65,16 +64,16 @@ int odp_buffer_snprint(char *str, uint32_t n, odp_buffer_t buf)
 	hdr = buf_hdl_to_hdr(buf);
 	pool = hdr->pool_ptr;
 
-	len += snprintf(&str[len], n-len,
+	len += snprintf(&str[len], n - len,
 			"Buffer\n");
-	len += snprintf(&str[len], n-len,
+	len += snprintf(&str[len], n - len,
 			"  pool         %" PRIu64 "\n",
 			odp_pool_to_u64(pool->pool_hdl));
-	len += snprintf(&str[len], n-len,
-			"  addr         %p\n",          hdr->seg[0].data);
-	len += snprintf(&str[len], n-len,
+	len += snprintf(&str[len], n - len,
+			"  addr         %p\n",          hdr->base_data);
+	len += snprintf(&str[len], n - len,
 			"  size         %" PRIu32 "\n", odp_buffer_size(buf));
-	len += snprintf(&str[len], n-len,
+	len += snprintf(&str[len], n - len,
 			"  type         %i\n",          hdr->type);
 
 	return len;
@@ -86,7 +85,7 @@ void odp_buffer_print(odp_buffer_t buf)
 	char str[max_len];
 	int len;
 
-	len = odp_buffer_snprint(str, max_len-1, buf);
+	len = odp_buffer_snprint(str, max_len - 1, buf);
 	str[len] = 0;
 
 	ODP_PRINT("\n%s\n", str);

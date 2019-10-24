@@ -1,4 +1,5 @@
 /* Copyright (c) 2016-2018, Linaro Limited
+ * Copyright (c) 2019, Nokia
  * All rights reserved.
  *
  * SPDX-License-Identifier:     BSD-3-Clause
@@ -22,14 +23,28 @@ extern "C" {
 #define ODP_CONFIG_POOLS 64
 
 /*
- * Maximum number of queues
- */
-#define ODP_CONFIG_QUEUES 1024
-
-/*
  * Queues reserved for ODP internal use
  */
-#define NUM_INTERNAL_QUEUES 64
+#define CONFIG_INTERNAL_QUEUES 64
+
+/*
+ * Maximum number of plain ODP queues
+ */
+#define CONFIG_MAX_PLAIN_QUEUES 1024
+
+/*
+ * Maximum number of scheduled ODP queues
+ *
+ * Must be a power of two.
+ */
+#define CONFIG_MAX_SCHED_QUEUES 1024
+
+/*
+ * Maximum number of queues
+ */
+#define CONFIG_MAX_QUEUES (CONFIG_INTERNAL_QUEUES + \
+			   CONFIG_MAX_PLAIN_QUEUES + \
+			   CONFIG_MAX_SCHED_QUEUES)
 
 /*
  * Maximum number of ordered locks per queue
@@ -73,21 +88,6 @@ extern "C" {
  * consider any unused portion of the last segment of a packet as tailroom
  */
 #define CONFIG_PACKET_TAILROOM 0
-
-/*
- * Maximum number of segments per packet
- */
-#define CONFIG_PACKET_MAX_SEGS 255
-
-/*
- * Packet segmentation disabled
- */
-#define CONFIG_PACKET_SEG_DISABLED (CONFIG_PACKET_MAX_SEGS == 1)
-
-/*
- * Number of segments stored in a packet header
- */
-#define CONFIG_PACKET_SEGS_PER_HDR 6
 
 /*
  * Maximum packet data length in bytes
@@ -142,7 +142,7 @@ extern "C" {
 /*
  * Maximum number of events in a thread local pool cache
  */
-#define CONFIG_POOL_CACHE_SIZE 256
+#define CONFIG_POOL_CACHE_MAX_SIZE 256
 
 #ifdef __cplusplus
 }

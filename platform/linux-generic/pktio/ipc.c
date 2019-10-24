@@ -4,8 +4,6 @@
  * SPDX-License-Identifier:     BSD-3-Clause
  */
 
-#include "config.h"
-
 #include <odp_packet_io_ipc_internal.h>
 #include <odp_debug_internal.h>
 #include <odp_packet_io_internal.h>
@@ -687,7 +685,7 @@ static int ipc_pktio_send_lockless(pktio_entry_t *pktio_entry,
 
 		offsets[i] = (uint8_t *)pkt_hdr -
 			     (uint8_t *)odp_shm_addr(pool->shm);
-		data_pool_off = (uint8_t *)pkt_hdr->buf_hdr.seg[0].data -
+		data_pool_off = (uint8_t *)pkt_hdr->seg_data -
 				(uint8_t *)odp_shm_addr(pool->shm);
 
 		/* compile all function code even if ipc disabled with config */

@@ -7,10 +7,10 @@
 #include <inttypes.h>
 
 #include <odp_api.h>
-#include <example_debug.h>
 #include <odp/helper/odph_api.h>
 
 #define MAX_WORKERS		32
+#define MAX_NUM_BUF		8192
 #define ITERATION_NUM		2048
 #define LOG_BASE		8
 #define LOG_ENTRY_SIZE		19
@@ -83,27 +83,30 @@ static void print_log(test_globals_t *gbls)
 		printf("Number of errors: %u\n", err_num);
 }
 
-static void
-generate_next_queue(test_globals_t *gbls, odp_queue_t *queue, unsigned int id)
+static void generate_next_queue(test_globals_t *gbls, odp_queue_t *queue,
+				unsigned int id)
 {
 	int thr;
-	unsigned int rand_id;
+	uint8_t rand_u8;
 	char queue_name[sizeof(QUEUE_NAME_PREFIX) + 2];
+	unsigned int rand_id = 1;
 
 	thr = odp_thread_id();
 
 	/* generate next random id */
-	do {
-		odp_random_data((uint8_t *)&rand_id, sizeof(rand_id), 1);
-		rand_id = rand_id % gbls->thread_num + 1;
-	} while (rand_id == id);
+	if (gbls->thread_num > 1) {
+		do {
+			odp_random_data(&rand_u8, 1, ODP_RANDOM_BASIC);
+			rand_id = rand_u8 % gbls->thread_num + 1;
+		} while (rand_id == id);
+	}
 
 	sprintf(queue_name, QUEUE_NAME_PREFIX "%d", rand_id);
 	*queue = odp_queue_lookup(queue_name);
 
 	if (ODP_QUEUE_INVALID == *queue)
-		EXAMPLE_ABORT("Cannot lookup thread queue \"%s\", thread %d\n",
-			      queue_name, thr);
+		ODPH_ABORT("Cannot lookup thread queue \"%s\", thread %d\n",
+			   queue_name, thr);
 }
 
 static void test_global_timestamps(test_globals_t *gbls,
@@ -130,11 +133,11 @@ static void test_global_timestamps(test_globals_t *gbls,
 
 		time = odp_time_global();
 		if (odp_time_cmp(time, timestamp_ev->timestamp) < 0) {
-			EXAMPLE_ERR("timestamp is less than previous time_prev=%"
-				    PRIu64 "ns, time_next=%"
-				    PRIu64 "ns, thread %d\n",
-				    odp_time_to_ns(timestamp_ev->timestamp),
-				    odp_time_to_ns(time), thr);
+			ODPH_ERR("timestamp is less than previous time_prev=%"
+				 PRIu64 "ns, time_next=%"
+				 PRIu64 "ns, thread %d\n",
+				 odp_time_to_ns(timestamp_ev->timestamp),
+				 odp_time_to_ns(time), thr);
 			odp_atomic_inc_u32(&gbls->err_counter);
 		}
 
@@ -148,11 +151,10 @@ static void test_global_timestamps(test_globals_t *gbls,
 		generate_next_queue(gbls, &queue_next, id);
 		timestamp_ev->timestamp = time;
 		if (odp_queue_enq(queue_next, ev))
-			EXAMPLE_ABORT("Cannot enqueue event %"
-				      PRIu64 " on queue %"
-				      PRIu64 ", thread %d\n",
-				      odp_event_to_u64(ev),
-				      odp_queue_to_u64(queue_next), thr);
+			ODPH_ABORT("Cannot enqueue event %" PRIu64 " on queue "
+				   "%" PRIu64 ", thread %d\n",
+				   odp_event_to_u64(ev),
+				   odp_queue_to_u64(queue_next), thr);
 
 		odp_atomic_inc_u32(&gbls->iteration_counter);
 	}
@@ -190,16 +192,16 @@ static int run_thread(void *ptr)
 	sprintf(queue_name, QUEUE_NAME_PREFIX "%d", id);
 	queue = odp_queue_create(queue_name, NULL);
 	if (queue == ODP_QUEUE_INVALID)
-		EXAMPLE_ABORT("Cannot create thread queue, thread %d", thr);
+		ODPH_ABORT("Cannot create thread queue, thread %d", thr);
 
 	/* allocate buffer for timestamp */
 	buffer_pool = odp_pool_lookup("time buffers pool");
 	if (buffer_pool == ODP_POOL_INVALID)
-		EXAMPLE_ABORT("Buffer pool was not found, thread %d\n", thr);
+		ODPH_ABORT("Buffer pool was not found, thread %d\n", thr);
 
 	buf = odp_buffer_alloc(buffer_pool);
 	if (buf == ODP_BUFFER_INVALID)
-		EXAMPLE_ABORT("Buffer was not allocated, thread %d\n", thr);
+		ODPH_ABORT("Buffer was not allocated, thread %d\n", thr);
 
 	/* wait all threads allocated their queues */
 	odp_barrier_wait(&gbls->start_barrier);
@@ -213,10 +215,9 @@ static int run_thread(void *ptr)
 	timestamp_ev->id = id;
 	timestamp_ev->timestamp = odp_time_global();
 	if (odp_queue_enq(queue_next, ev))
-		EXAMPLE_ABORT("Cannot enqueue timestamp event %"
-			      PRIu64 " on queue %" PRIu64 ", thread %d",
-			      odp_event_to_u64(ev),
-			      odp_queue_to_u64(queue_next), thr);
+		ODPH_ABORT("Cannot enqueue timestamp event %" PRIu64 " on "
+			   "queue %" PRIu64 ", thread %d", odp_event_to_u64(ev),
+			   odp_queue_to_u64(queue_next), thr);
 
 	test_global_timestamps(gbls, queue, id);
 
@@ -235,8 +236,8 @@ static int run_thread(void *ptr)
 
 	/* free allocated queue */
 	if (odp_queue_destroy(queue))
-		EXAMPLE_ABORT("Cannot destroy queue %" PRIu64 "",
-			      odp_queue_to_u64(queue));
+		ODPH_ABORT("Cannot destroy queue %" PRIu64 "",
+			   odp_queue_to_u64(queue));
 
 	printf("Thread %i exits\n", thr);
 	fflush(NULL);
@@ -250,22 +251,24 @@ int main(int argc, char *argv[])
 	int num_workers;
 	test_globals_t *gbls;
 	odp_cpumask_t cpumask;
-	odp_pool_param_t params;
+	odp_pool_capability_t pool_capa;
+	odp_pool_param_t pool_param;
 	odp_shm_t shm_glbls = ODP_SHM_INVALID;
 	odp_shm_t shm_log = ODP_SHM_INVALID;
 	int log_size, log_enries_num;
 	odph_helper_options_t helper_options;
-	odph_odpthread_t thread_tbl[MAX_WORKERS];
+	odph_thread_t thread_tbl[MAX_WORKERS];
 	odp_instance_t instance;
 	odp_init_t init_param;
-	odph_odpthread_params_t thr_params;
+	odph_thread_common_param_t thr_common;
+	odph_thread_param_t thr_param;
 
 	printf("\nODP global time test starts\n");
 
 	/* Let helper collect its own arguments (e.g. --odph_proc) */
 	argc = odph_parse_options(argc, argv);
 	if (odph_options(&helper_options)) {
-		EXAMPLE_ERR("Error: reading ODP helper options failed.\n");
+		ODPH_ERR("Error: reading ODP helper options failed.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -274,14 +277,14 @@ int main(int argc, char *argv[])
 
 	if (odp_init_global(&instance, &init_param, NULL)) {
 		err = 1;
-		EXAMPLE_ERR("ODP global init failed.\n");
+		ODPH_ERR("ODP global init failed.\n");
 		goto end;
 	}
 
 	/* Init this thread. */
 	if (odp_init_local(instance, ODP_THREAD_CONTROL)) {
 		err = 1;
-		EXAMPLE_ERR("ODP local init failed.\n");
+		ODPH_ERR("ODP local init failed.\n");
 		goto err_global;
 	}
 
@@ -292,7 +295,7 @@ int main(int argc, char *argv[])
 				    ODP_CACHE_LINE_SIZE, 0);
 	if (ODP_SHM_INVALID == shm_glbls) {
 		err = 1;
-		EXAMPLE_ERR("Error: shared mem reserve failed.\n");
+		ODPH_ERR("Error: shared mem reserve failed.\n");
 		goto err;
 	}
 
@@ -301,7 +304,7 @@ int main(int argc, char *argv[])
 	shm_log = odp_shm_reserve("test_log", log_size, ODP_CACHE_LINE_SIZE, 0);
 	if (ODP_SHM_INVALID == shm_log) {
 		err = 1;
-		EXAMPLE_ERR("Error: shared mem reserve failed.\n");
+		ODPH_ERR("Error: shared mem reserve failed.\n");
 		goto err;
 	}
 
@@ -318,29 +321,45 @@ int main(int argc, char *argv[])
 	odp_barrier_init(&gbls->end_barrier, num_workers);
 	memset(gbls->log, 0, log_size);
 
-	params.buf.size  = sizeof(timestamp_event_t);
-	params.buf.align = ODP_CACHE_LINE_SIZE;
-	params.buf.num   = num_workers;
-	params.type      = ODP_POOL_BUFFER;
-
-	pool = odp_pool_create("time buffers pool", &params);
-	if (pool == ODP_POOL_INVALID) {
+	if (odp_pool_capability(&pool_capa)) {
 		err = 1;
-		EXAMPLE_ERR("Pool create failed.\n");
+		ODPH_ERR("Error: pool capability failed.\n");
 		goto err;
 	}
 
-	memset(&thr_params, 0, sizeof(thr_params));
-	thr_params.start    = run_thread;
-	thr_params.arg      = gbls;
-	thr_params.thr_type = ODP_THREAD_WORKER;
-	thr_params.instance = instance;
+	odp_pool_param_init(&pool_param);
+
+	pool_param.buf.size  = sizeof(timestamp_event_t);
+	pool_param.buf.align = ODP_CACHE_LINE_SIZE;
+	pool_param.buf.num   = MAX_NUM_BUF;
+	pool_param.type      = ODP_POOL_BUFFER;
+
+	if (pool_capa.buf.max_num && MAX_NUM_BUF > pool_capa.buf.max_num)
+		pool_param.buf.num = pool_capa.buf.max_num;
+
+	pool = odp_pool_create("time buffers pool", &pool_param);
+	if (pool == ODP_POOL_INVALID) {
+		err = 1;
+		ODPH_ERR("Pool create failed.\n");
+		goto err;
+	}
+
+	memset(&thr_common, 0, sizeof(thr_common));
+	memset(&thr_param, 0, sizeof(thr_param));
+
+	thr_param.start    = run_thread;
+	thr_param.arg      = gbls;
+	thr_param.thr_type = ODP_THREAD_WORKER;
+
+	thr_common.instance = instance;
+	thr_common.cpumask = &cpumask;
+	thr_common.share_param = 1;
 
 	/* Create and launch worker threads */
-	odph_odpthreads_create(thread_tbl, &cpumask, &thr_params);
+	odph_thread_create(thread_tbl, &thr_common, &thr_param, num_workers);
 
 	/* Wait for worker threads to exit */
-	odph_odpthreads_join(thread_tbl);
+	odph_thread_join(thread_tbl, num_workers);
 
 	print_log(gbls);
 
@@ -364,7 +383,7 @@ err_global:
 		err = 1;
 end:
 	if (err) {
-		EXAMPLE_ERR("Err: ODP global time test failed\n\n");
+		ODPH_ERR("Err: ODP global time test failed\n\n");
 		return -1;
 	}
 

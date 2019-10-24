@@ -1,10 +1,9 @@
 /* Copyright (c) 2014-2018, Linaro Limited
+ * Copyright (c) 2019, Nokia
  * All rights reserved.
  *
  * SPDX-License-Identifier:     BSD-3-Clause
  */
-
-#include "config.h"
 
 /* enable strtok */
 #ifndef _GNU_SOURCE
@@ -16,10 +15,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <inttypes.h>
-#include <assert.h>
 #include <signal.h>
-
-#include <test_debug.h>
 
 #include <odp_api.h>
 #include <odp/helper/odph_api.h>
@@ -92,6 +88,7 @@ typedef struct {
 	int chksum;             /* Checksum offload */
 	int sched_mode;         /* Scheduler mode */
 	int num_groups;         /* Number of scheduling groups */
+	int burst_rx;           /* Receive burst size */
 	int verbose;		/* Verbose output */
 } appl_args_t;
 
@@ -136,8 +133,10 @@ typedef struct thread_args_t {
  * Grouping of all global data
  */
 typedef struct {
+	/* Thread table */
+	odph_thread_t thread_tbl[MAX_WORKERS];
 	/* Thread specific arguments */
-	thread_args_t thread[MAX_WORKERS];
+	thread_args_t thread_args[MAX_WORKERS];
 	/* Barriers to synchronize main and workers */
 	odp_barrier_t init_barrier;
 	odp_barrier_t term_barrier;
@@ -178,6 +177,8 @@ static args_t *gbl_args;
 
 static void sig_handler(int signo ODP_UNUSED)
 {
+	if (gbl_args == NULL)
+		return;
 	gbl_args->exit_threads = 1;
 }
 
@@ -257,7 +258,7 @@ static inline int event_queue_send(odp_queue_t queue, odp_packet_t *pkt_tbl,
 		ret = odp_queue_enq_multi(queue, &ev_tbl[sent], pkts - sent);
 
 		if (ret < 0) {
-			LOG_ERR("Failed to send packet as events\n");
+			ODPH_ERR("Failed to send packet as events\n");
 			break;
 		}
 
@@ -291,6 +292,7 @@ static int run_worker_sched_mode(void *arg)
 	int dst_idx;
 	int i;
 	int pktio, num_pktio;
+	uint16_t max_burst;
 	odp_pktout_queue_t pktout[MAX_PKTIOS];
 	odp_queue_t tx_queue[MAX_PKTIOS];
 	thread_args_t *thr_args = arg;
@@ -299,6 +301,7 @@ static int run_worker_sched_mode(void *arg)
 	pktin_mode_t in_mode = gbl_args->appl.in_mode;
 
 	thr = odp_thread_id();
+	max_burst = gbl_args->appl.burst_rx;
 
 	if (gbl_args->appl.num_groups) {
 		odp_thrmask_t mask;
@@ -310,7 +313,7 @@ static int run_worker_sched_mode(void *arg)
 		for (i = 0; i < thr_args->num_groups; i++) {
 			if (odp_schedule_group_join(thr_args->group[i],
 						    &mask)) {
-				LOG_ERR("Join failed\n");
+				ODPH_ERR("Join failed\n");
 				return -1;
 			}
 		}
@@ -319,7 +322,7 @@ static int run_worker_sched_mode(void *arg)
 	num_pktio = thr_args->num_pktio;
 
 	if (num_pktio > MAX_PKTIOS) {
-		LOG_ERR("Too many pktios %i\n", num_pktio);
+		ODPH_ERR("Too many pktios %i\n", num_pktio);
 		return -1;
 	}
 
@@ -343,8 +346,7 @@ static int run_worker_sched_mode(void *arg)
 		unsigned tx_drops;
 		int src_idx;
 
-		pkts = odp_schedule_multi(NULL, ODP_SCHED_NO_WAIT, ev_tbl,
-					  MAX_PKT_BURST);
+		pkts = odp_schedule_multi_no_wait(NULL, ev_tbl, max_burst);
 
 		if (pkts <= 0)
 			continue;
@@ -373,7 +375,7 @@ static int run_worker_sched_mode(void *arg)
 
 		/* packets from the same queue are from the same interface */
 		src_idx = odp_packet_input_index(pkt_tbl[0]);
-		assert(src_idx >= 0);
+		ODPH_ASSERT(src_idx >= 0);
 		dst_idx = gbl_args->dst_port_from_idx[src_idx];
 		fill_eth_addrs(pkt_tbl, pkts, dst_idx);
 
@@ -428,6 +430,7 @@ static int run_worker_plain_queue_mode(void *arg)
 {
 	int thr;
 	int pkts;
+	uint16_t max_burst;
 	odp_packet_t pkt_tbl[MAX_PKT_BURST];
 	int dst_idx, num_pktio;
 	odp_queue_t queue;
@@ -440,6 +443,7 @@ static int run_worker_plain_queue_mode(void *arg)
 	int i;
 
 	thr = odp_thread_id();
+	max_burst = gbl_args->appl.burst_rx;
 
 	num_pktio = thr_args->num_pktio;
 	dst_idx   = thr_args->pktio[pktio].tx_idx;
@@ -470,7 +474,7 @@ static int run_worker_plain_queue_mode(void *arg)
 				pktio = 0;
 		}
 
-		pkts = odp_queue_deq_multi(queue, event, MAX_PKT_BURST);
+		pkts = odp_queue_deq_multi(queue, event, max_burst);
 		if (odp_unlikely(pkts <= 0))
 			continue;
 
@@ -555,6 +559,7 @@ static int run_worker_direct_mode(void *arg)
 {
 	int thr;
 	int pkts;
+	uint16_t max_burst;
 	odp_packet_t pkt_tbl[MAX_PKT_BURST];
 	int dst_idx, num_pktio;
 	odp_pktin_queue_t pktin;
@@ -566,6 +571,7 @@ static int run_worker_direct_mode(void *arg)
 	int use_event_queue = gbl_args->appl.out_mode;
 
 	thr = odp_thread_id();
+	max_burst = gbl_args->appl.burst_rx;
 
 	num_pktio = thr_args->num_pktio;
 	dst_idx   = thr_args->pktio[pktio].tx_idx;
@@ -595,7 +601,7 @@ static int run_worker_direct_mode(void *arg)
 				pktio = 0;
 		}
 
-		pkts = odp_pktin_recv(pktin, pkt_tbl, MAX_PKT_BURST);
+		pkts = odp_pktin_recv(pktin, pkt_tbl, max_burst);
 		if (odp_unlikely(pkts <= 0))
 			continue;
 
@@ -684,12 +690,12 @@ static int create_pktio(const char *dev, int idx, int num_rx, int num_tx,
 
 	pktio = odp_pktio_open(dev, pool, &pktio_param);
 	if (pktio == ODP_PKTIO_INVALID) {
-		LOG_ERR("Error: failed to open %s\n", dev);
+		ODPH_ERR("Error: failed to open %s\n", dev);
 		return -1;
 	}
 
 	if (odp_pktio_info(pktio, &info)) {
-		LOG_ERR("Error: pktio info failed %s\n", dev);
+		ODPH_ERR("Error: pktio info failed %s\n", dev);
 		return -1;
 	}
 
@@ -700,7 +706,7 @@ static int create_pktio(const char *dev, int idx, int num_rx, int num_tx,
 		odp_pktio_print(pktio);
 
 	if (odp_pktio_capability(pktio, &pktio_capa)) {
-		LOG_ERR("Error: pktio capability query failed %s\n", dev);
+		ODPH_ERR("Error: pktio capability query failed %s\n", dev);
 		return -1;
 	}
 
@@ -762,28 +768,27 @@ static int create_pktio(const char *dev, int idx, int num_rx, int num_tx,
 	pktout_param.num_queues = num_tx;
 
 	if (odp_pktin_queue_config(pktio, &pktin_param)) {
-		LOG_ERR("Error: input queue config failed %s\n", dev);
+		ODPH_ERR("Error: input queue config failed %s\n", dev);
 		return -1;
 	}
 
 	if (odp_pktout_queue_config(pktio, &pktout_param)) {
-		LOG_ERR("Error: output queue config failed %s\n", dev);
+		ODPH_ERR("Error: output queue config failed %s\n", dev);
 		return -1;
 	}
 
 	if (gbl_args->appl.in_mode == DIRECT_RECV) {
 		if (odp_pktin_queue(pktio, gbl_args->pktios[idx].pktin,
 				    num_rx) != num_rx) {
-			LOG_ERR("Error: pktin queue query failed %s\n",
-				dev);
+			ODPH_ERR("Error: pktin queue query failed %s\n", dev);
 			return -1;
 		}
 	} else {
 		if (odp_pktin_event_queue(pktio,
 					  gbl_args->pktios[idx].rx_q,
 					  num_rx) != num_rx) {
-			LOG_ERR("Error: pktin event queue query failed %s\n",
-				dev);
+			ODPH_ERR("Error: pktin event queue query failed %s\n",
+				 dev);
 			return -1;
 		}
 	}
@@ -792,14 +797,14 @@ static int create_pktio(const char *dev, int idx, int num_rx, int num_tx,
 		if (odp_pktout_queue(pktio,
 				     gbl_args->pktios[idx].pktout,
 				     num_tx) != num_tx) {
-			LOG_ERR("Error: pktout queue query failed %s\n", dev);
+			ODPH_ERR("Error: pktout queue query failed %s\n", dev);
 			return -1;
 		}
 	} else {
 		if (odp_pktout_event_queue(pktio,
 					   gbl_args->pktios[idx].tx_q,
 					   num_tx) != num_tx) {
-			LOG_ERR("Error: event queue query failed %s\n", dev);
+			ODPH_ERR("Error: event queue query failed %s\n", dev);
 			return -1;
 		}
 	}
@@ -952,7 +957,7 @@ static void bind_workers(void)
 		}
 
 		for (thr = 0; thr < num_workers; thr++) {
-			thr_args = &gbl_args->thread[thr];
+			thr_args = &gbl_args->thread_args[thr];
 			thr_args->num_pktio = if_count;
 
 			/* In sched mode, pktios are not cross connected with
@@ -973,7 +978,7 @@ static void bind_workers(void)
 			thr = 0;
 
 			for (rx_idx = 0; rx_idx < if_count; rx_idx++) {
-				thr_args = &gbl_args->thread[thr];
+				thr_args = &gbl_args->thread_args[thr];
 				pktio    = thr_args->num_pktio;
 				/* Cross connect rx to tx */
 				tx_idx   = gbl_args->dst_port[rx_idx];
@@ -994,7 +999,7 @@ static void bind_workers(void)
 			rx_idx = 0;
 
 			for (thr = 0; thr < num_workers; thr++) {
-				thr_args = &gbl_args->thread[thr];
+				thr_args = &gbl_args->thread_args[thr];
 				pktio    = thr_args->num_pktio;
 				/* Cross connect rx to tx */
 				tx_idx   = gbl_args->dst_port[rx_idx];
@@ -1027,7 +1032,7 @@ static void bind_queues(void)
 
 	for (thr = 0; thr < num_workers; thr++) {
 		int rx_idx, tx_idx;
-		thread_args_t *thr_args = &gbl_args->thread[thr];
+		thread_args_t *thr_args = &gbl_args->thread_args[thr];
 		int num = thr_args->num_pktio;
 
 		printf("worker %i\n", thr);
@@ -1086,7 +1091,7 @@ static void init_port_lookup_tbl(void)
 		int dst_port      = find_dest_port(rx_idx);
 
 		if (pktio_idx < 0 || pktio_idx >= MAX_PKTIO_INDEXES) {
-			LOG_ERR("Bad pktio index %i\n", pktio_idx);
+			ODPH_ERR("Bad pktio index %i\n", pktio_idx);
 			exit(EXIT_FAILURE);
 		}
 
@@ -1143,6 +1148,8 @@ static void usage(char *progname)
 	       "  -g, --groups <num>      Number of groups to use: 0 ... num\n"
 	       "                          0: SCHED_GROUP_ALL (default)\n"
 	       "                          num: must not exceed number of interfaces or workers\n"
+	       "  -b, --burst_rx <num>    0:   Use max burst size (default)\n"
+	       "                          num: Max number of packets per receive call\n"
 	       "  -v, --verbose           Verbose output.\n"
 	       "  -h, --help              Display help and exit.\n\n"
 	       "\n", NO_PATH(progname), NO_PATH(progname), MAX_PKTIOS
@@ -1177,12 +1184,13 @@ static void parse_args(int argc, char *argv[], appl_args_t *appl_args)
 		{"error_check", required_argument, NULL, 'e'},
 		{"chksum", required_argument, NULL, 'k'},
 		{"groups", required_argument, NULL, 'g'},
+		{"burst_rx", required_argument, NULL, 'b'},
 		{"verbose", no_argument, NULL, 'v'},
 		{"help", no_argument, NULL, 'h'},
 		{NULL, 0, NULL, 0}
 	};
 
-	static const char *shortopts =  "+c:+t:+a:i:m:o:r:d:s:e:k:g:vh";
+	static const char *shortopts = "+c:t:a:i:m:o:r:d:s:e:k:g:b:vh";
 
 	appl_args->time = 0; /* loop forever if time to run is 0 */
 	appl_args->accuracy = 1; /* get and print pps stats second */
@@ -1191,6 +1199,7 @@ static void parse_args(int argc, char *argv[], appl_args_t *appl_args)
 	appl_args->src_change = 1; /* change eth src address by default */
 	appl_args->num_groups = 0; /* use default group */
 	appl_args->error_check = 0; /* don't check packet errors by default */
+	appl_args->burst_rx = 0;
 	appl_args->verbose = 0;
 	appl_args->chksum = 0; /* don't use checksum offload by default */
 
@@ -1321,6 +1330,9 @@ static void parse_args(int argc, char *argv[], appl_args_t *appl_args)
 		case 'g':
 			appl_args->num_groups = atoi(optarg);
 			break;
+		case 'b':
+			appl_args->burst_rx = atoi(optarg);
+			break;
 		case 'v':
 			appl_args->verbose = 1;
 			break;
@@ -1344,6 +1356,15 @@ static void parse_args(int argc, char *argv[], appl_args_t *appl_args)
 		usage(argv[0]);
 		exit(EXIT_FAILURE);
 	}
+
+	if (appl_args->burst_rx > MAX_PKT_BURST) {
+		printf("Error: Burst size (%i) too large. Maximum is %i.\n",
+		       appl_args->burst_rx, MAX_PKT_BURST);
+		exit(EXIT_FAILURE);
+	}
+
+	if (appl_args->burst_rx == 0)
+		appl_args->burst_rx = MAX_PKT_BURST;
 
 	appl_args->extra_check = appl_args->error_check || appl_args->chksum;
 
@@ -1380,11 +1401,13 @@ static void print_info(char *progname, appl_args_t *appl_args)
 		printf("PKTIN_SCHED_ORDERED, ");
 
 	if (appl_args->out_mode)
-		printf("PKTOUT_QUEUE");
+		printf("PKTOUT_QUEUE\n");
 	else
-		printf("PKTOUT_DIRECT");
+		printf("PKTOUT_DIRECT\n");
 
-	printf("\n\n");
+	printf("Burst size:      %i\n", appl_args->burst_rx);
+
+	printf("\n");
 	fflush(NULL);
 }
 
@@ -1414,7 +1437,7 @@ static void create_groups(int num, odp_schedule_group_t *group)
 		group[i] = odp_schedule_group_create(NULL, &zero);
 
 		if (group[i] == ODP_SCHED_GROUP_INVALID) {
-			LOG_ERR("Group create failed\n");
+			ODPH_ERR("Group create failed\n");
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -1426,11 +1449,11 @@ static void create_groups(int num, odp_schedule_group_t *group)
 int main(int argc, char *argv[])
 {
 	odph_helper_options_t helper_options;
-	odph_odpthread_t thread_tbl[MAX_WORKERS];
+	odph_thread_param_t thr_param[MAX_WORKERS];
+	odph_thread_common_param_t thr_common;
 	odp_pool_t pool;
 	int i;
-	int cpu;
-	int num_workers;
+	int num_workers, num_thr;
 	odp_shm_t shm;
 	odp_cpumask_t cpumask;
 	char cpumaskstr[ODP_CPUMASK_STR_SIZE];
@@ -1450,7 +1473,7 @@ int main(int argc, char *argv[])
 	/* Let helper collect its own arguments (e.g. --odph_proc) */
 	argc = odph_parse_options(argc, argv);
 	if (odph_options(&helper_options)) {
-		LOG_ERR("Error: reading ODP helper options failed.\n");
+		ODPH_ERR("Error: reading ODP helper options failed.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -1471,23 +1494,29 @@ int main(int argc, char *argv[])
 
 	/* Init ODP before calling anything else */
 	if (odp_init_global(&instance, &init, NULL)) {
-		LOG_ERR("Error: ODP global init failed.\n");
+		ODPH_ERR("Error: ODP global init failed.\n");
 		exit(EXIT_FAILURE);
 	}
 
 	/* Init this thread */
 	if (odp_init_local(instance, ODP_THREAD_CONTROL)) {
-		LOG_ERR("Error: ODP local init failed.\n");
+		ODPH_ERR("Error: ODP local init failed.\n");
 		exit(EXIT_FAILURE);
 	}
 
 	/* Reserve memory for args from shared mem */
 	shm = odp_shm_reserve("shm_args", sizeof(args_t),
 			      ODP_CACHE_LINE_SIZE, 0);
+
+	if (shm == ODP_SHM_INVALID) {
+		ODPH_ERR("Error: shared mem reserve failed.\n");
+		exit(EXIT_FAILURE);
+	}
+
 	gbl_args = odp_shm_addr(shm);
 
 	if (gbl_args == NULL) {
-		LOG_ERR("Error: shared mem alloc failed.\n");
+		ODPH_ERR("Error: shared mem alloc failed.\n");
 		exit(EXIT_FAILURE);
 	}
 	gbl_args_init(gbl_args);
@@ -1512,7 +1541,7 @@ int main(int argc, char *argv[])
 	gbl_args->appl.num_workers = num_workers;
 
 	for (i = 0; i < num_workers; i++)
-		gbl_args->thread[i].thr_idx    = i;
+		gbl_args->thread_args[i].thr_idx = i;
 
 	if_count = gbl_args->appl.if_count;
 
@@ -1528,13 +1557,13 @@ int main(int argc, char *argv[])
 	printf("\n");
 
 	if (num_groups > if_count || num_groups > num_workers) {
-		LOG_ERR("Too many groups. Number of groups may not exceed "
-			"number of interfaces or workers.\n");
+		ODPH_ERR("Too many groups. Number of groups may not exceed "
+			 "number of interfaces or workers.\n");
 		exit(EXIT_FAILURE);
 	}
 
 	if (odp_pool_capability(&pool_capa)) {
-		LOG_ERR("Error: pool capability failed\n");
+		ODPH_ERR("Error: pool capability failed\n");
 		return -1;
 	}
 
@@ -1557,14 +1586,14 @@ int main(int argc, char *argv[])
 	pool = odp_pool_create("packet pool", &params);
 
 	if (pool == ODP_POOL_INVALID) {
-		LOG_ERR("Error: packet pool create failed.\n");
+		ODPH_ERR("Error: packet pool create failed.\n");
 		exit(EXIT_FAILURE);
 	}
 	odp_pool_print(pool);
 
 	if (odp_pktio_max_index() >= MAX_PKTIO_INDEXES)
-		LOG_DBG("Warning: max pktio index (%u) is too large\n",
-			odp_pktio_max_index());
+		ODPH_DBG("Warning: max pktio index (%u) is too large\n",
+			 odp_pktio_max_index());
 
 	bind_workers();
 
@@ -1603,7 +1632,7 @@ int main(int argc, char *argv[])
 		if (odp_pktio_mac_addr(gbl_args->pktios[i].pktio,
 				       gbl_args->port_eth_addr[i].addr,
 				       ODPH_ETHADDR_LEN) != ODPH_ETHADDR_LEN) {
-			LOG_ERR("Error: interface ethernet address unknown\n");
+			ODPH_ERR("Error: interface ethernet address unknown\n");
 			exit(EXIT_FAILURE);
 		}
 
@@ -1631,8 +1660,6 @@ int main(int argc, char *argv[])
 	if (!gbl_args->appl.sched_mode)
 		print_port_mapping();
 
-	memset(thread_tbl, 0, sizeof(thread_tbl));
-
 	odp_barrier_init(&gbl_args->init_barrier, num_workers + 1);
 	odp_barrier_init(&gbl_args->term_barrier, num_workers + 1);
 
@@ -1644,28 +1671,33 @@ int main(int argc, char *argv[])
 		thr_run_func = run_worker_sched_mode;
 
 	/* Create worker threads */
-	cpu = odp_cpumask_first(&cpumask);
-	for (i = 0; i < num_workers; ++i) {
-		odp_cpumask_t thd_mask;
-		odph_odpthread_params_t thr_params;
+	memset(thr_param, 0, sizeof(thr_param));
+	memset(&thr_common, 0, sizeof(thr_common));
 
-		memset(&thr_params, 0, sizeof(thr_params));
-		thr_params.start    = thr_run_func;
-		thr_params.arg      = &gbl_args->thread[i];
-		thr_params.thr_type = ODP_THREAD_WORKER;
-		thr_params.instance = instance;
+	thr_common.instance = instance;
+	thr_common.cpumask  = &cpumask;
+	/* Synchronize thread start up. Test runs are more repeatable when
+	 * thread / thread ID / CPU ID mapping stays constant. */
+	thr_common.sync     = 1;
+
+	for (i = 0; i < num_workers; ++i) {
+		thr_param[i].start    = thr_run_func;
+		thr_param[i].arg      = &gbl_args->thread_args[i];
+		thr_param[i].thr_type = ODP_THREAD_WORKER;
 
 		/* Round robin threads to groups */
-		gbl_args->thread[i].num_groups = 1;
-		gbl_args->thread[i].group[0] = group[i % num_groups];
+		gbl_args->thread_args[i].num_groups = 1;
+		gbl_args->thread_args[i].group[0] = group[i % num_groups];
 
-		stats[i] = &gbl_args->thread[i].stats;
+		stats[i] = &gbl_args->thread_args[i].stats;
+	}
 
-		odp_cpumask_zero(&thd_mask);
-		odp_cpumask_set(&thd_mask, cpu);
-		odph_odpthreads_create(&thread_tbl[i], &thd_mask,
-				       &thr_params);
-		cpu = odp_cpumask_next(&cpumask, cpu);
+	num_thr = odph_thread_create(gbl_args->thread_tbl, &thr_common,
+				     thr_param, num_workers);
+
+	if (num_thr != num_workers) {
+		ODPH_ERR("Error: worker create failed %i\n", num_thr);
+		exit(EXIT_FAILURE);
 	}
 
 	/* Start packet receive and transmit */
@@ -1675,8 +1707,8 @@ int main(int argc, char *argv[])
 		pktio = gbl_args->pktios[i].pktio;
 		ret   = odp_pktio_start(pktio);
 		if (ret) {
-			LOG_ERR("Error: unable to start %s\n",
-				gbl_args->appl.if_names[i]);
+			ODPH_ERR("Error: unable to start %s\n",
+				 gbl_args->appl.if_names[i]);
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -1686,8 +1718,8 @@ int main(int argc, char *argv[])
 
 	for (i = 0; i < if_count; ++i) {
 		if (odp_pktio_stop(gbl_args->pktios[i].pktio)) {
-			LOG_ERR("Error: unable to stop %s\n",
-				gbl_args->appl.if_names[i]);
+			ODPH_ERR("Error: unable to stop %s\n",
+				 gbl_args->appl.if_names[i]);
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -1697,37 +1729,42 @@ int main(int argc, char *argv[])
 		odp_barrier_wait(&gbl_args->term_barrier);
 
 	/* Master thread waits for other threads to exit */
-	for (i = 0; i < num_workers; ++i)
-		odph_odpthreads_join(&thread_tbl[i]);
+	num_thr = odph_thread_join(gbl_args->thread_tbl, num_workers);
+	if (num_thr != num_workers) {
+		ODPH_ERR("Error: worker join failed %i\n", num_thr);
+			 exit(EXIT_FAILURE);
+	}
 
 	for (i = 0; i < if_count; ++i) {
 		if (odp_pktio_close(gbl_args->pktios[i].pktio)) {
-			LOG_ERR("Error: unable to close %s\n",
-				gbl_args->appl.if_names[i]);
+			ODPH_ERR("Error: unable to close %s\n",
+				 gbl_args->appl.if_names[i]);
 			exit(EXIT_FAILURE);
 		}
 	}
 
 	free(gbl_args->appl.if_names);
 	free(gbl_args->appl.if_str);
+	gbl_args = NULL;
+	odp_mb_full();
 
 	if (odp_pool_destroy(pool)) {
-		LOG_ERR("Error: pool destroy\n");
+		ODPH_ERR("Error: pool destroy\n");
 		exit(EXIT_FAILURE);
 	}
 
 	if (odp_shm_free(shm)) {
-		LOG_ERR("Error: shm free\n");
+		ODPH_ERR("Error: shm free\n");
 		exit(EXIT_FAILURE);
 	}
 
 	if (odp_term_local()) {
-		LOG_ERR("Error: term local\n");
+		ODPH_ERR("Error: term local\n");
 		exit(EXIT_FAILURE);
 	}
 
 	if (odp_term_global(instance)) {
-		LOG_ERR("Error: term global\n");
+		ODPH_ERR("Error: term global\n");
 		exit(EXIT_FAILURE);
 	}
 

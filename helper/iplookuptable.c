@@ -4,16 +4,14 @@
  * SPDX-License-Identifier:     BSD-3-Clause
  */
 
-#include "config.h"
-
 #include <string.h>
 #include <stdint.h>
 #include <errno.h>
 #include <stdio.h>
 
 #include <odp/helper/odph_iplookuptable.h>
+#include <odp/helper/odph_debug.h>
 #include "odph_list_internal.h"
-#include "odph_debug.h"
 #include <odp_api.h>
 
 /** @magic word, write to the first byte of the memory block

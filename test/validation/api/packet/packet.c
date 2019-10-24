@@ -1,10 +1,9 @@
 /* Copyright (c) 2014-2018, Linaro Limited
+ * Copyright (c) 2019, Nokia
  * All rights reserved.
  *
  * SPDX-License-Identifier:	BSD-3-Clause
  */
-
-#include "config.h"
 
 #include <stdlib.h>
 
@@ -85,13 +84,16 @@ static void _packet_compare_data(odp_packet_t pkt1, odp_packet_t pkt2,
 	uint32_t len = odp_packet_len(pkt1);
 	uint32_t offset = 0;
 	uint32_t seglen1, seglen2, cmplen;
+	void *pkt1map, *pkt2map;
 	int ret;
 
 	CU_ASSERT_FATAL(len == odp_packet_len(pkt2));
 
 	while (len > 0) {
-		void *pkt1map = odp_packet_offset(pkt1, offset, &seglen1, NULL);
-		void *pkt2map = odp_packet_offset(pkt2, offset, &seglen2, NULL);
+		seglen1 = 0;
+		seglen2 = 0;
+		pkt1map = odp_packet_offset(pkt1, offset, &seglen1, NULL);
+		pkt2map = odp_packet_offset(pkt2, offset, &seglen2, NULL);
 
 		CU_ASSERT_PTR_NOT_NULL_FATAL(pkt1map);
 		CU_ASSERT_PTR_NOT_NULL_FATAL(pkt2map);
@@ -787,7 +789,7 @@ static void packet_test_layer_offsets(void)
 {
 	odp_packet_t pkt = test_packet;
 	uint8_t *l2_addr, *l3_addr, *l4_addr;
-	uint32_t seg_len;
+	uint32_t seg_len = 0;
 	const uint32_t l2_off = 2;
 	const uint32_t l3_off = l2_off + 14;
 	const uint32_t l4_off = l3_off + 14;
@@ -1342,6 +1344,7 @@ static void _packet_compare_offset(odp_packet_t pkt1, uint32_t off1,
 				   odp_packet_t pkt2, uint32_t off2,
 				   uint32_t len, int line)
 {
+	void *pkt1map, *pkt2map;
 	uint32_t seglen1, seglen2, cmplen;
 	int ret;
 
@@ -1350,8 +1353,10 @@ static void _packet_compare_offset(odp_packet_t pkt1, uint32_t off1,
 		return;
 
 	while (len > 0) {
-		void *pkt1map = odp_packet_offset(pkt1, off1, &seglen1, NULL);
-		void *pkt2map = odp_packet_offset(pkt2, off2, &seglen2, NULL);
+		seglen1 = 0;
+		seglen2 = 0;
+		pkt1map = odp_packet_offset(pkt1, off1, &seglen1, NULL);
+		pkt2map = odp_packet_offset(pkt2, off2, &seglen2, NULL);
 
 		CU_ASSERT_PTR_NOT_NULL_FATAL(pkt1map);
 		CU_ASSERT_PTR_NOT_NULL_FATAL(pkt2map);
@@ -1379,7 +1384,8 @@ static void packet_test_copy(void)
 	odp_packet_t pkt;
 	odp_packet_t pkt_copy, pkt_part;
 	odp_pool_t pool;
-	uint32_t i, plen, seg_len, src_offset, dst_offset;
+	uint32_t i, plen, src_offset, dst_offset;
+	uint32_t seg_len = 0;
 	void *pkt_data;
 
 	pkt = odp_packet_copy(test_packet, packet_pool_no_uarea);
@@ -1458,7 +1464,7 @@ static void packet_test_copy(void)
 
 	/* Test segment crossing if we support segments */
 	pkt_data = odp_packet_offset(pkt, 0, &seg_len, NULL);
-	CU_ASSERT(pkt_data != NULL);
+	CU_ASSERT_FATAL(pkt_data != NULL);
 
 	if (seg_len < plen) {
 		src_offset = seg_len - 15;
@@ -2162,7 +2168,8 @@ static void packet_test_extend_ref(void)
 static void packet_test_align(void)
 {
 	odp_packet_t pkt;
-	uint32_t pkt_len, seg_len, offset, aligned_seglen;
+	uint32_t pkt_len, offset;
+	uint32_t seg_len = 0, aligned_seglen = 0;
 	void *pkt_data, *aligned_data;
 	const uint32_t max_align = 32;
 
@@ -2220,10 +2227,11 @@ static void packet_test_align(void)
 static void packet_test_offset(void)
 {
 	odp_packet_t pkt = test_packet;
-	uint32_t seg_len, full_seg_len;
-	odp_packet_seg_t seg;
+	uint32_t seg_len = 0;
+	uint32_t full_seg_len;
 	uint8_t *ptr, *start_ptr;
 	uint32_t offset;
+	odp_packet_seg_t seg = ODP_PACKET_SEG_INVALID;
 
 	ptr = odp_packet_offset(pkt, 0, &seg_len, &seg);
 	CU_ASSERT(seg != ODP_PACKET_SEG_INVALID);

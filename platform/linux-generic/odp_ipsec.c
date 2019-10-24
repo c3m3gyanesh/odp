@@ -4,8 +4,6 @@
  * SPDX-License-Identifier:     BSD-3-Clause
  */
 
-#include "config.h"
-
 #include <odp/api/ipsec.h>
 #include <odp/api/chksum.h>
 
@@ -1876,7 +1874,7 @@ int odp_ipsec_out_inline(const odp_packet_t pkt_in[], int num_in,
 			odp_pktout_queue_t pkqueue;
 
 			if (odp_pktout_queue(inline_param[in_pkt].pktio,
-					     &pkqueue, 1) < 0) {
+					     &pkqueue, 1) <= 0) {
 				status.error.alg = 1;
 				goto err;
 			}

@@ -75,7 +75,7 @@ Prerequisites for building the OpenDataPlane (ODP) API
    $ make install
 
    # You may now build either 32 or 64 bit ODP
-   $ git clone https://github.com/Linaro/odp.git odp
+   $ git clone https://github.com/OpenDataPlane/odp.git odp
    $ cd odp
    $ ./bootstrap
 
@@ -96,13 +96,13 @@ Prerequisites for building the OpenDataPlane (ODP) API
 3.3.1 Building netmap kernel modules
 
    ODP works at least with the latest release version of netmap, which is
-   currently 11.2. However, if possible one should try to use the latest netmap
+   currently v13.0. However, if possible one should try to use the latest netmap
    master branch commit for the best performance and the latest bug fixes.
 
    # Checkout netmap code
    $ git clone https://github.com/luigirizzo/netmap.git
    $ cd netmap
-   $ git checkout v11.2 (optional)
+   $ git checkout v13.0 (optional)
 
    This is enough to build ODP. If you don't want to build netmap kernel
    modules you can jump to section 3.3.2.
@@ -174,7 +174,7 @@ Prerequisites for building the OpenDataPlane (ODP) API
    v18.02, v18.05 and v18.11.
 
    Note: only packet I/O is accelerated with DPDK. Use
-        https://github.com/Linaro/odp-dpdk.git
+        https://github.com/OpenDataPlane/odp-dpdk.git
    for fully accelerated odp dpdk platform.
 
 3.4.1 DPDK pktio requirements

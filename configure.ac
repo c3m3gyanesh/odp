@@ -1,14 +1,14 @@
 AC_PREREQ([2.5])
 ##########################################################################
-# Set correct API version
+# ODP API version
 ##########################################################################
 m4_define([odpapi_generation_version], [1])
-m4_define([odpapi_major_version], [21])
+m4_define([odpapi_major_version], [22])
 m4_define([odpapi_minor_version], [0])
 m4_define([odpapi_point_version], [0])
 m4_define([odpapi_version],
     [odpapi_generation_version.odpapi_major_version.odpapi_minor_version.odpapi_point_version])
-AC_INIT([OpenDataPlane],[odpapi_version],[lng-odp@lists.linaro.org])
+AC_INIT([OpenDataPlane],[odpapi_version],[odp@lists.opendataplane.org])
 
 ODP_VERSION_API_GENERATION=odpapi_generation_version
 AC_SUBST(ODP_VERSION_API_GENERATION)
@@ -16,9 +16,34 @@ ODP_VERSION_API_MAJOR=odpapi_major_version
 AC_SUBST(ODP_VERSION_API_MAJOR)
 ODP_VERSION_API_MINOR=odpapi_minor_version
 AC_SUBST(ODP_VERSION_API_MINOR)
+
+##########################################################################
+# Helper library version
+##########################################################################
+m4_define([odph_version_generation], [1])
+m4_define([odph_version_major], [0])
+m4_define([odph_version_minor], [3])
+
+m4_define([odph_version],
+    [odph_version_generation.odph_version_major.odph_version_minor])
+
+ODPH_VERSION_GENERATION=odph_version_generation
+AC_SUBST(ODPH_VERSION_GENERATION)
+ODPH_VERSION_MAJOR=odph_version_major
+AC_SUBST(ODPH_VERSION_MAJOR)
+ODPH_VERSION_MINOR=odph_version_minor
+AC_SUBST(ODPH_VERSION_MINOR)
+
+##########################################################################
+# Test if user has set CFLAGS. Automake initializes CFLAGS to "-g -O2"
+# by default.
+##########################################################################
+AS_IF([test "$ac_cv_env_CFLAGS_set" = ""], [user_cflags=0], [user_cflags=1])
+
+# Initialize automake
 AM_INIT_AUTOMAKE([1.9 tar-pax subdir-objects foreign nostdinc -Wall -Werror])
 AC_CONFIG_SRCDIR([include/odp/api/spec/init.h])
-AM_CONFIG_HEADER([include/config.h])
+AM_CONFIG_HEADER([include/odp/autoheader_build.h include/odp/autoheader_external.h include/odp/autoheader_internal.h])
 
 AC_USE_SYSTEM_EXTENSIONS
 AC_SYS_LARGEFILE
@@ -87,6 +112,7 @@ AC_TYPE_UINT64_T
 ODP_CFLAGS="$ODP_CFLAGS -W -Wall -Werror"
 ODP_CXXFLAGS="$ODP_CXXFLAGS -W -Wall -Werror"
 
+# Additional warnings:
 ODP_CHECK_CFLAG([-Wstrict-prototypes])
 ODP_CHECK_CFLAG([-Wmissing-prototypes])
 ODP_CHECK_CFLAG([-Wmissing-declarations])
@@ -101,6 +127,11 @@ ODP_CHECK_CFLAG([-Wundef])
 ODP_CHECK_CFLAG([-Wwrite-strings])
 ODP_CHECK_CFLAG([-Wformat-truncation=0])
 ODP_CHECK_CFLAG([-Wformat-overflow=0])
+
+# Suppressed warnings:
+# GCC-9 warns about taking pointers to packed structure fields (e.g. protocol
+# header structures). Generate only warnings on those, not errors.
+ODP_CHECK_CFLAG([-Wno-error=address-of-packed-member])
 
 ODP_CFLAGS="$ODP_CFLAGS -std=c99"
 ODP_CXXFLAGS="$ODP_CXXFLAGS -std=c++11"
@@ -198,16 +229,38 @@ AC_ARG_ENABLE([abi-compat],
     [if test "x$enableval" = "xno"; then
 	ODP_ABI_COMPAT=0
 	abi_compat=no
+
 	#if there is no ABI compatibility the .so numbers are meaningless
 	ODP_LIBSO_VERSION=0:0:0
-	# do not try -march=native for clang due to possible failures on
-	# clang optimizations
+
+	# do not use -march=native with clang (due to possible failures on
+	# clang optimizations) or when user have defined CFLAGS (may contain
+	# another -march option).
 	$CC --version | grep -q clang
-	if test $? -ne 0; then
+
+	if test $? -ne 0 -a $user_cflags -eq 0; then
 		ODP_CHECK_CFLAG([-march=native])
 	fi
     fi])
 AM_CONDITIONAL(ODP_ABI_COMPAT, [test "x$ODP_ABI_COMPAT" = "x1"])
+
+##########################################################################
+# Enable/disable link time optimization
+##########################################################################
+lto_enabled=no
+AC_ARG_ENABLE([lto],
+	[AS_HELP_STRING([--enable-lto],
+			[Enable Link Time Optimization (LTO) in compiler and linker])],
+	[if test "x$enableval" = "xyes"; then
+		lto_enabled=yes
+		# Fat LTO object file contains GIMPLE bytecodes and the usual
+		# final code. There are less build problems (e.g. due to older
+		# binutils), but object files are larger.
+		ODP_LTO_FLAGS="-flto -ffat-lto-objects"
+	fi])
+AC_SUBST(ODP_LTO_FLAGS)
+
+ODP_CFLAGS="$ODP_CFLAGS $ODP_LTO_FLAGS"
 
 ##########################################################################
 # Determine which platform to build for
@@ -228,8 +281,10 @@ AS_IF([test "${with_platform}" = "linux-generic"],
       [m4_include([./platform/linux-generic/m4/configure.m4])],
       [AC_MSG_ERROR([UNSUPPORTED PLATFORM: ${with_platform}])])
 
-AC_DEFINE_UNQUOTED([ODP_IMPLEMENTATION_NAME], ["$ODP_IMPLEMENTATION_NAME"],
+AC_DEFINE_UNQUOTED([_ODP_IMPLEMENTATION_NAME], ["$ODP_IMPLEMENTATION_NAME"],
 		   [Define to the name of the implementation])
+
+AM_CONDITIONAL([ODP_USE_CONFIG], [test "x$odp_use_config" = "xtrue"])
 
 ##########################################################################
 # Build examples/tests dynamically
@@ -239,6 +294,9 @@ AC_ARG_ENABLE([static-applications],
 			      [disable static linking of examples and tests]
 			      [ with ODP])], [],
 	      [enable_static_applications=yes])
+AS_IF([test "x$enable_static" != "xno" -a "x$enable_static_applications" != "xno"],
+      [enable_static_applications=yes], [enable_static_applications=no])
+
 AM_CONDITIONAL([STATIC_APPS], [test "x$enable_static_applications" != "xno"])
 if test "x$DPDK_SHARED" = "xyes" -a "x$enable_static_applications" != "xno" ;
 then
@@ -313,6 +371,14 @@ AS_IF([test "x$enable_debug" != "xno"], [ODP_DEBUG=1],
 AC_DEFINE_UNQUOTED([ODP_DEBUG], [$ODP_DEBUG],
 		   [Define to 1 to include additional debug code])
 
+AC_ARG_ENABLE([helper-debug],
+    [AS_HELP_STRING([--enable-helper-debug], [helpers include additional debugging code])],
+    [], [AS_IF([test "x$enable_debug" = "xfull"], [enable_helper_debug=yes],
+    [enable_helper_debug=no])])
+AS_IF([test "x$enable_helper_debug" != "xno"], [ODPH_DEBUG=1], [ODPH_DEBUG=0])
+AC_DEFINE_UNQUOTED([ODPH_DEBUG], [$ODPH_DEBUG],
+		   [Define to 1 to include additional helper debug code])
+
 ##########################################################################
 # Enable/disable ODP_DEBUG_PRINT
 ##########################################################################
@@ -334,6 +400,9 @@ AS_IF([test "x$enable_helper_debug_print" != "xno"], [ODPH_DEBUG_PRINT=1],
 AC_DEFINE_UNQUOTED([ODPH_DEBUG_PRINT], [$ODPH_DEBUG_PRINT],
 		   [Define to 1 to display helper debug information])
 
+debug_settings="ODP_DEBUG=${ODP_DEBUG}, ODP_DEBUG_PRINT=${ODP_DEBUG_PRINT}, \
+ODPH_DEBUG=${ODPH_DEBUG}, ODPH_DEBUG_PRINT=${ODPH_DEBUG_PRINT}"
+
 ##########################################################################
 # Enable/disable deprecated API definitions
 ##########################################################################
@@ -352,12 +421,15 @@ AC_SUBST(ODP_DEPRECATED_API)
 ##########################################################################
 CFLAGS="$CFLAGS $ODP_CFLAGS"
 CXXFLAGS="$CXXFLAGS $ODP_CXXFLAGS"
+LDFLAGS="$LDFLAGS $ODP_LTO_FLAGS"
 
 AC_CONFIG_FILES([Makefile])
 AC_CONFIG_FILES([include/Makefile
 		 include/odp/api/spec/version.h
 		 include/odp/api/spec/deprecated.h])
 
+AC_CONFIG_FILES([helper/Makefile
+		 helper/include/odp/helper/version.h])
 
 ##########################################################################
 # distribute the changed variables among the Makefiles
@@ -395,6 +467,7 @@ AC_MSG_RESULT([
 	cc version:             ${CC_VERSION}
 	cppflags:		${CPPFLAGS}
 	cflags:			${CFLAGS}
+	cxxflags:		${CXXFLAGS}
 	ld:			${LD}
 	ldflags:		${LDFLAGS}
 	libs:			${LIBS}
@@ -402,8 +475,9 @@ AC_MSG_RESULT([
 	static libraries:	${enable_static}
 	shared libraries:	${enable_shared}
 	ABI compatible:		${abi_compat}
-	Deprecated APIs:	${deprecated}
-	debug:			${enable_debug}
+	link time optimization:	${lto_enabled}
+	deprecated APIs:	${deprecated}
+	debug:			${debug_settings}
 	cunit:			${cunit_support}
 	static tests linkage:	${enable_static_applications}
 	with_examples:		${with_examples}

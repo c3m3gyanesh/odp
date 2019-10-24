@@ -4,8 +4,6 @@
  * SPDX-License-Identifier:	BSD-3-Clause
  */
 
-#include "config.h"
-
 #include <odp_api.h>
 #include "odp_cunit_common.h"
 
@@ -304,7 +302,7 @@ int main(int argc, char *argv[])
 	ret = odp_cunit_register(buffer_suites);
 
 	if (ret == 0)
-		odp_cunit_run();
+		ret = odp_cunit_run();
 
 	return ret;
 }
